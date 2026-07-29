@@ -170,7 +170,11 @@ describe('NodeSDK restart and registration failure characterization', () => {
 
     assert.notStrictEqual(secondProvider, firstProvider);
     assert.strictEqual(
-      (trace.getTracerProvider() as { getDelegate(): unknown }).getDelegate(),
+      (
+        trace.getTracerProvider() as unknown as {
+          getDelegate(): unknown;
+        }
+      ).getDelegate(),
       firstProvider
     );
 
