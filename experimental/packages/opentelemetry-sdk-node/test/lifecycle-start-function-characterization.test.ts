@@ -18,6 +18,10 @@ import type {
   Instrumentation,
   InstrumentationConfig,
 } from '@opentelemetry/instrumentation';
+import {
+  TracerProvider as SDKTracerProvider,
+  type SpanProcessor,
+} from '@opentelemetry/sdk-trace';
 import * as assert from 'assert';
 import * as Sinon from 'sinon';
 import { NOOP_SDK, startNodeSDK } from '../src/start';
@@ -145,5 +149,65 @@ describe('startNodeSDK lifecycle characterization', () => {
     await first.shutdown();
 
     assert.strictEqual(disableContextManager.callCount, 0);
+  });
+
+  it('can publish context while retaining a pre-existing global tracer provider', async () => {
+    let startedSpans = 0;
+    let endedSpans = 0;
+    let existingProviderShutdownCalls = 0;
+    const existingProcessor: SpanProcessor = {
+      onStart() {
+        startedSpans += 1;
+      },
+      onEnd() {
+        endedSpans += 1;
+      },
+      forceFlush: () => Promise.resolve(),
+      shutdown: () => {
+        existingProviderShutdownCalls += 1;
+        return Promise.resolve();
+      },
+    };
+    const existingProvider = new SDKTracerProvider({
+      spanProcessors: [existingProcessor],
+    });
+    assert.strictEqual(trace.setGlobalTracerProvider(existingProvider), true);
+
+    const setGlobalContextManager = Sinon.spy(
+      context,
+      'setGlobalContextManager'
+    );
+    const setGlobalTracerProvider = Sinon.spy(
+      trace,
+      'setGlobalTracerProvider'
+    );
+    const shutdownTracerProvider = Sinon.spy(
+      SDKTracerProvider.prototype,
+      'shutdown'
+    );
+    process.env.OTEL_TRACES_EXPORTER = 'console';
+
+    const sdk = startNodeSDK();
+
+    assert.strictEqual(setGlobalContextManager.callCount, 1);
+    assert.strictEqual(setGlobalContextManager.firstCall.returnValue, true);
+    assert.strictEqual(setGlobalTracerProvider.callCount, 1);
+    assert.strictEqual(setGlobalTracerProvider.firstCall.returnValue, false);
+
+    trace.getTracer('fieldwork-before-private-shutdown').startSpan('one').end();
+    assert.strictEqual(startedSpans, 1);
+    assert.strictEqual(endedSpans, 1);
+
+    await sdk.shutdown();
+
+    assert.strictEqual(shutdownTracerProvider.callCount, 1);
+    assert.strictEqual(existingProviderShutdownCalls, 0);
+
+    trace.getTracer('fieldwork-after-private-shutdown').startSpan('two').end();
+    assert.strictEqual(startedSpans, 2);
+    assert.strictEqual(endedSpans, 2);
+
+    await existingProvider.shutdown();
+    assert.strictEqual(existingProviderShutdownCalls, 1);
   });
 });
