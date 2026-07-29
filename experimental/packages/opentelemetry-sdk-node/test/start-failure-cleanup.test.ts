@@ -18,6 +18,7 @@ import type {
   Instrumentation,
   InstrumentationConfig,
 } from '@opentelemetry/instrumentation';
+import { TracerProvider as SDKTracerProvider } from '@opentelemetry/sdk-trace';
 import * as assert from 'assert';
 import * as Sinon from 'sinon';
 import { NOOP_SDK, startNodeSDK } from '../src/start';
@@ -53,6 +54,13 @@ class DisabledTrackingInstrumentation implements Instrumentation {
 
   getConfig(): InstrumentationConfig {
     return this._config;
+  }
+}
+
+class ThrowingInstrumentation extends DisabledTrackingInstrumentation {
+  enable(): void {
+    super.enable();
+    throw new Error('instrumentation enable failed');
   }
 }
 
@@ -111,6 +119,38 @@ describe('startNodeSDK failure cleanup', () => {
     assert.strictEqual(disableContextManager.callCount, 1);
 
     await sdk.shutdown();
+  });
+
+  it('does not publish globals when instrumentation registration throws', () => {
+    const instrumentation = new ThrowingInstrumentation();
+    const setGlobalContextManager = Sinon.spy(
+      context,
+      'setGlobalContextManager'
+    );
+    const setGlobalTracerProvider = Sinon.spy(
+      trace,
+      'setGlobalTracerProvider'
+    );
+    const disableContextManager = Sinon.spy(
+      AsyncLocalStorageContextManager.prototype,
+      'disable'
+    );
+    const shutdownTracerProvider = Sinon.spy(
+      SDKTracerProvider.prototype,
+      'shutdown'
+    );
+    process.env.OTEL_TRACES_EXPORTER = 'console';
+
+    assert.throws(
+      () => startNodeSDK({ instrumentations: [instrumentation] }),
+      /instrumentation enable failed/
+    );
+
+    assert.strictEqual(instrumentation.enableCalls, 1);
+    assert.strictEqual(setGlobalContextManager.callCount, 0);
+    assert.strictEqual(setGlobalTracerProvider.callCount, 0);
+    assert.strictEqual(disableContextManager.callCount, 1);
+    assert.strictEqual(shutdownTracerProvider.callCount, 1);
   });
 
   it('still registers instrumentation after successful component setup', async () => {
