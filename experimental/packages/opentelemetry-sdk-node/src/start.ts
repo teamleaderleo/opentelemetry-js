@@ -82,10 +82,6 @@ export function startNodeSDK(sdkOptions?: SDKOptions): {
   const logLevel = diagLogLevelFromSeverityNumberConfig(config.log_level);
   diag.setLogger(new DiagConsoleLogger(), { logLevel });
 
-  registerInstrumentations({
-    instrumentations: sdkOptions?.instrumentations?.flat() ?? [],
-  });
-
   let components: SDKComponents;
   try {
     components = create(config, sdkOptions);
@@ -93,6 +89,19 @@ export function startNodeSDK(sdkOptions?: SDKOptions): {
     diag.error(`Could not create OpenTelemetry SDK: ${createErr.message}`);
     return NOOP_SDK;
   }
+
+  try {
+    registerInstrumentations({
+      instrumentations: sdkOptions?.instrumentations?.flat() ?? [],
+      loggerProvider: components.loggerProvider,
+      meterProvider: components.meterProvider,
+      tracerProvider: components.tracerProvider,
+    });
+  } catch (registrationErr) {
+    cleanupComponents(components);
+    throw registrationErr;
+  }
+
   if (components.contextManager) {
     context.setGlobalContextManager(components.contextManager);
   }
@@ -187,18 +196,45 @@ function create(
 
     return components;
   } catch (createErr) {
-    // Clean up any SDK components that were created before the error.
-    if (components.loggerProvider) {
-      void components.loggerProvider.shutdown();
-    }
-    if (components.meterProvider) {
-      void components.meterProvider.shutdown();
-    }
-    if (components.tracerProvider) {
-      void components.tracerProvider.shutdown();
-    }
-
+    cleanupComponents(components);
     throw createErr;
+  }
+}
+
+function cleanupComponents(components: SDKComponents): void {
+  try {
+    components.contextManager?.disable();
+  } catch (cleanupErr) {
+    diag.error('Could not disable failed SDK context manager', cleanupErr);
+  }
+
+  safelyShutdownComponent('logger provider', () =>
+    components.loggerProvider?.shutdown()
+  );
+  safelyShutdownComponent('meter provider', () =>
+    components.meterProvider?.shutdown()
+  );
+  safelyShutdownComponent('tracer provider', () =>
+    components.tracerProvider?.shutdown()
+  );
+}
+
+function safelyShutdownComponent(
+  componentName: string,
+  shutdown: () => Promise<void> | undefined
+): void {
+  try {
+    const result = shutdown();
+    if (result) {
+      void result.catch(cleanupErr => {
+        diag.error(
+          `Could not shut down failed SDK ${componentName}`,
+          cleanupErr
+        );
+      });
+    }
+  } catch (cleanupErr) {
+    diag.error(`Could not shut down failed SDK ${componentName}`, cleanupErr);
   }
 }
 
