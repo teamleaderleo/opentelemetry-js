@@ -89,6 +89,19 @@ export function startNodeSDK(sdkOptions?: SDKOptions): {
     diag.error(`Could not create OpenTelemetry SDK: ${createErr.message}`);
     return NOOP_SDK;
   }
+
+  try {
+    registerInstrumentations({
+      instrumentations: sdkOptions?.instrumentations?.flat() ?? [],
+      loggerProvider: components.loggerProvider,
+      meterProvider: components.meterProvider,
+      tracerProvider: components.tracerProvider,
+    });
+  } catch (registrationErr) {
+    cleanupComponents(components);
+    throw registrationErr;
+  }
+
   if (components.contextManager) {
     context.setGlobalContextManager(components.contextManager);
   }
@@ -104,10 +117,6 @@ export function startNodeSDK(sdkOptions?: SDKOptions): {
   if (components.propagator) {
     propagation.setGlobalPropagator(components.propagator);
   }
-
-  registerInstrumentations({
-    instrumentations: sdkOptions?.instrumentations?.flat() ?? [],
-  });
 
   const shutdownFn = async () => {
     const promises: Promise<unknown>[] = [];
@@ -187,21 +196,21 @@ function create(
 
     return components;
   } catch (createErr) {
-    // Clean up any SDK components that were created before the error.
-    if (components.contextManager) {
-      components.contextManager.disable();
-    }
-    if (components.loggerProvider) {
-      void components.loggerProvider.shutdown();
-    }
-    if (components.meterProvider) {
-      void components.meterProvider.shutdown();
-    }
-    if (components.tracerProvider) {
-      void components.tracerProvider.shutdown();
-    }
-
+    cleanupComponents(components);
     throw createErr;
+  }
+}
+
+function cleanupComponents(components: SDKComponents): void {
+  components.contextManager?.disable();
+  if (components.loggerProvider) {
+    void components.loggerProvider.shutdown();
+  }
+  if (components.meterProvider) {
+    void components.meterProvider.shutdown();
+  }
+  if (components.tracerProvider) {
+    void components.tracerProvider.shutdown();
   }
 }
 
