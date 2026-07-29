@@ -202,15 +202,39 @@ function create(
 }
 
 function cleanupComponents(components: SDKComponents): void {
-  components.contextManager?.disable();
-  if (components.loggerProvider) {
-    void components.loggerProvider.shutdown();
+  try {
+    components.contextManager?.disable();
+  } catch (cleanupErr) {
+    diag.error('Could not disable failed SDK context manager', cleanupErr);
   }
-  if (components.meterProvider) {
-    void components.meterProvider.shutdown();
-  }
-  if (components.tracerProvider) {
-    void components.tracerProvider.shutdown();
+
+  safelyShutdownComponent('logger provider', () =>
+    components.loggerProvider?.shutdown()
+  );
+  safelyShutdownComponent('meter provider', () =>
+    components.meterProvider?.shutdown()
+  );
+  safelyShutdownComponent('tracer provider', () =>
+    components.tracerProvider?.shutdown()
+  );
+}
+
+function safelyShutdownComponent(
+  componentName: string,
+  shutdown: () => Promise<void> | undefined
+): void {
+  try {
+    const result = shutdown();
+    if (result) {
+      void result.catch(cleanupErr => {
+        diag.error(
+          `Could not shut down failed SDK ${componentName}`,
+          cleanupErr
+        );
+      });
+    }
+  } catch (cleanupErr) {
+    diag.error(`Could not shut down failed SDK ${componentName}`, cleanupErr);
   }
 }
 
