@@ -82,10 +82,6 @@ export function startNodeSDK(sdkOptions?: SDKOptions): {
   const logLevel = diagLogLevelFromSeverityNumberConfig(config.log_level);
   diag.setLogger(new DiagConsoleLogger(), { logLevel });
 
-  registerInstrumentations({
-    instrumentations: sdkOptions?.instrumentations?.flat() ?? [],
-  });
-
   let components: SDKComponents;
   try {
     components = create(config, sdkOptions);
@@ -108,6 +104,10 @@ export function startNodeSDK(sdkOptions?: SDKOptions): {
   if (components.propagator) {
     propagation.setGlobalPropagator(components.propagator);
   }
+
+  registerInstrumentations({
+    instrumentations: sdkOptions?.instrumentations?.flat() ?? [],
+  });
 
   const shutdownFn = async () => {
     const promises: Promise<unknown>[] = [];
@@ -188,6 +188,9 @@ function create(
     return components;
   } catch (createErr) {
     // Clean up any SDK components that were created before the error.
+    if (components.contextManager) {
+      components.contextManager.disable();
+    }
     if (components.loggerProvider) {
       void components.loggerProvider.shutdown();
     }
