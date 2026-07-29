@@ -164,6 +164,7 @@ export class NodeSDK {
   private _configuration?: Partial<NodeSDKConfiguration>;
 
   private _disabled?: boolean;
+  private _startAttempted = false;
 
   /**
    * Create a new NodeJS SDK instance
@@ -247,6 +248,12 @@ export class NodeSDK {
     if (this._disabled) {
       return;
     }
+
+    if (this._startAttempted) {
+      diag.warn('NodeSDK.start() may only be called once.');
+      return;
+    }
+    this._startAttempted = true;
 
     registerInstrumentations({
       instrumentations: this._instrumentations,
