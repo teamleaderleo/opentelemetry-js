@@ -153,6 +153,72 @@ describe('startNodeSDK failure cleanup', () => {
     assert.strictEqual(shutdownTracerProvider.callCount, 1);
   });
 
+  it('preserves the registration error when synchronous cleanup throws', () => {
+    const instrumentation = new ThrowingInstrumentation();
+    const cleanupError = new Error('tracer cleanup threw');
+    const diagError = Sinon.spy(diag, 'error');
+    Sinon.stub(SDKTracerProvider.prototype, 'shutdown').throws(cleanupError);
+    process.env.OTEL_TRACES_EXPORTER = 'console';
+
+    assert.throws(
+      () => startNodeSDK({ instrumentations: [instrumentation] }),
+      /instrumentation enable failed/
+    );
+
+    Sinon.assert.calledWith(
+      diagError,
+      'Could not shut down failed SDK tracer provider',
+      cleanupError
+    );
+  });
+
+  it('observes rejected asynchronous cleanup without replacing the registration error', async () => {
+    const instrumentation = new ThrowingInstrumentation();
+    const cleanupError = new Error('tracer cleanup rejected');
+    const diagError = Sinon.spy(diag, 'error');
+    Sinon.stub(SDKTracerProvider.prototype, 'shutdown').rejects(cleanupError);
+    process.env.OTEL_TRACES_EXPORTER = 'console';
+
+    assert.throws(
+      () => startNodeSDK({ instrumentations: [instrumentation] }),
+      /instrumentation enable failed/
+    );
+
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    Sinon.assert.calledWith(
+      diagError,
+      'Could not shut down failed SDK tracer provider',
+      cleanupError
+    );
+  });
+
+  it('continues cleanup when context-manager disable throws', () => {
+    const instrumentation = new ThrowingInstrumentation();
+    const cleanupError = new Error('context cleanup threw');
+    const diagError = Sinon.spy(diag, 'error');
+    Sinon.stub(AsyncLocalStorageContextManager.prototype, 'disable').throws(
+      cleanupError
+    );
+    const shutdownTracerProvider = Sinon.spy(
+      SDKTracerProvider.prototype,
+      'shutdown'
+    );
+    process.env.OTEL_TRACES_EXPORTER = 'console';
+
+    assert.throws(
+      () => startNodeSDK({ instrumentations: [instrumentation] }),
+      /instrumentation enable failed/
+    );
+
+    Sinon.assert.calledWith(
+      diagError,
+      'Could not disable failed SDK context manager',
+      cleanupError
+    );
+    Sinon.assert.calledOnce(shutdownTracerProvider);
+  });
+
   it('still registers instrumentation after successful component setup', async () => {
     const instrumentation = new DisabledTrackingInstrumentation();
 
