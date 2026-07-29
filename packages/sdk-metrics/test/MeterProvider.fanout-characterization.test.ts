@@ -40,6 +40,32 @@ describe('MeterProvider lifecycle fanout characterization', () => {
     assert.strictEqual(secondCalls, 0);
   });
 
+  it('lets a concurrent second shutdown resolve before the first shutdown fails', async () => {
+    const reader = new TestMetricReader();
+    const error = new Error('fieldwork delayed metrics shutdown failure');
+    let shutdownCalls = 0;
+    let rejectShutdown: (reason: Error) => void = () => {};
+    const delayedFailure = new Promise<void>((_resolve, reject) => {
+      rejectShutdown = reject;
+    });
+
+    sinon.stub(reader, 'shutdown').callsFake(() => {
+      shutdownCalls += 1;
+      return delayedFailure;
+    });
+
+    const provider = new MeterProvider({ readers: [reader] });
+    const firstShutdown = provider.shutdown();
+    const secondShutdown = provider.shutdown();
+
+    await secondShutdown;
+    assert.strictEqual(shutdownCalls, 1);
+
+    rejectShutdown(error);
+    await assert.rejects(firstShutdown, error);
+    assert.strictEqual(shutdownCalls, 1);
+  });
+
   it('rejects and skips later readers during forceFlush', async () => {
     const error = new Error('fieldwork metrics forceFlush throw');
     const first = new TestMetricReader();
