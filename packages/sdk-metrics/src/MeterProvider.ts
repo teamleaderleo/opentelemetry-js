@@ -9,6 +9,7 @@ import type {
   MeterOptions,
 } from '@opentelemetry/api';
 import { diag, createNoopMeter } from '@opentelemetry/api';
+import { BindOnceFuture } from '@opentelemetry/core';
 import type { Resource } from '@opentelemetry/resources';
 import { defaultResource } from '@opentelemetry/resources';
 import { MetricReader, type IMetricReader } from './export/MetricReader';
@@ -39,12 +40,15 @@ export interface MeterProviderOptions {
  */
 export class MeterProvider implements IMeterProvider {
   private _sharedState: MeterProviderSharedState;
-  private _shutdown = false;
+  private readonly _shutdownOnce: BindOnceFuture<void>;
+  private _shutdownOptions?: ShutdownOptions;
+  private _shutdownInvocationActive = false;
 
   constructor(options?: MeterProviderOptions) {
     this._sharedState = new MeterProviderSharedState(
       options?.resource ?? defaultResource()
     );
+    this._shutdownOnce = new BindOnceFuture(this._shutdown, this);
     if (options?.views != null && options.views.length > 0) {
       for (const viewOption of options.views) {
         this._sharedState.viewRegistry.addView(new View(viewOption));
@@ -68,7 +72,7 @@ export class MeterProvider implements IMeterProvider {
    */
   getMeter(name: string, version = '', options: MeterOptions = {}): IMeter {
     // https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/metrics/sdk.md#meter-creation
-    if (this._shutdown) {
+    if (this._shutdownOnce.isCalled) {
       diag.warn('A shutdown MeterProvider cannot provide a Meter');
       return createNoopMeter();
     }
@@ -86,19 +90,30 @@ export class MeterProvider implements IMeterProvider {
    *
    * Returns a promise which is resolved when all flushes are complete.
    */
-  async shutdown(options?: ShutdownOptions): Promise<void> {
-    if (this._shutdown) {
-      diag.warn('shutdown may only be called once per MeterProvider');
-      return;
+  shutdown(options?: ShutdownOptions): Promise<void> {
+    if (this._shutdownInvocationActive) {
+      diag.warn('recursive MeterProvider shutdown is ignored');
+      return Promise.resolve();
     }
+    if (this._shutdownOnce.isCalled) {
+      diag.warn('shutdown may only be called once per MeterProvider');
+      return this._shutdownOnce.promise;
+    }
+    this._shutdownOptions = options;
+    return this._shutdownOnce.call();
+  }
 
-    this._shutdown = true;
-
-    await Promise.all(
-      this._sharedState.metricCollectors.map(collector => {
-        return collector.shutdown(options);
-      })
-    );
+  private _shutdown(): Promise<void> {
+    this._shutdownInvocationActive = true;
+    try {
+      return Promise.all(
+        this._sharedState.metricCollectors.map(collector => {
+          return collector.shutdown(this._shutdownOptions);
+        })
+      ).then(() => {});
+    } finally {
+      this._shutdownInvocationActive = false;
+    }
   }
 
   /**
@@ -106,17 +121,21 @@ export class MeterProvider implements IMeterProvider {
    *
    * Returns a promise which is resolved when all flushes are complete.
    */
-  async forceFlush(options?: ForceFlushOptions): Promise<void> {
+  forceFlush(options?: ForceFlushOptions): Promise<void> {
+    if (this._shutdownInvocationActive) {
+      diag.warn('cannot force flush recursively during MeterProvider shutdown');
+      return Promise.resolve();
+    }
     // do not flush after shutdown
-    if (this._shutdown) {
+    if (this._shutdownOnce.isCalled) {
       diag.warn('invalid attempt to force flush after MeterProvider shutdown');
-      return;
+      return this._shutdownOnce.promise;
     }
 
-    await Promise.all(
+    return Promise.all(
       this._sharedState.metricCollectors.map(collector => {
         return collector.forceFlush(options);
       })
-    );
+    ).then(() => {});
   }
 }
