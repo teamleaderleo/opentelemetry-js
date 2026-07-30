@@ -24,23 +24,27 @@ async function settlesWithin(
   ]);
 }
 
+function processor(shutdown: () => Promise<void>): SpanProcessor {
+  return {
+    onStart() {},
+    onEnd() {},
+    forceFlush: () => Promise.resolve(),
+    shutdown,
+  };
+}
+
 describe('TracerProvider delayed shutdown reentry', () => {
   it('records a delayed processor shutdown self-dependency while an external caller joins', async () => {
     let provider!: TracerProvider;
     let nestedShutdown: Promise<void> | undefined;
     let shutdownCalls = 0;
-    const processor: SpanProcessor = {
-      onStart() {},
-      onEnd() {},
-      forceFlush: () => Promise.resolve(),
-      shutdown: async () => {
-        shutdownCalls += 1;
-        await Promise.resolve();
-        nestedShutdown = provider.shutdown();
-        return nestedShutdown;
-      },
-    };
-    provider = new TracerProvider({ spanProcessors: [processor] });
+    const spanProcessor = processor(async () => {
+      shutdownCalls += 1;
+      await Promise.resolve();
+      nestedShutdown = provider.shutdown();
+      return nestedShutdown;
+    });
+    provider = new TracerProvider({ spanProcessors: [spanProcessor] });
 
     const outerShutdown = provider.shutdown();
     await nextTurn();
@@ -57,7 +61,7 @@ describe('TracerProvider delayed shutdown reentry', () => {
     let provider!: TracerProvider;
     let nestedForceFlush: Promise<void> | undefined;
     let processorForceFlushCalls = 0;
-    const processor: SpanProcessor = {
+    const spanProcessor: SpanProcessor = {
       onStart() {},
       onEnd() {},
       forceFlush: () => {
@@ -70,7 +74,7 @@ describe('TracerProvider delayed shutdown reentry', () => {
         return nestedForceFlush;
       },
     };
-    provider = new TracerProvider({ spanProcessors: [processor] });
+    provider = new TracerProvider({ spanProcessors: [spanProcessor] });
 
     const outerShutdown = provider.shutdown();
     await nextTurn();
@@ -79,5 +83,21 @@ describe('TracerProvider delayed shutdown reentry', () => {
     assert.strictEqual(nestedForceFlush, outerShutdown);
     assert.strictEqual(await settlesWithin(outerShutdown), false);
     assert.strictEqual(processorForceFlushCalls, 0);
+  });
+
+  it('allows delayed cross-provider shutdown nesting to complete', async () => {
+    const nested = new TracerProvider({
+      spanProcessors: [processor(() => Promise.resolve())],
+    });
+    const owner = new TracerProvider({
+      spanProcessors: [
+        processor(async () => {
+          await Promise.resolve();
+          return nested.shutdown();
+        }),
+      ],
+    });
+
+    assert.strictEqual(await settlesWithin(owner.shutdown()), true);
   });
 });
