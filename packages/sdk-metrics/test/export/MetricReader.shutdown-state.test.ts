@@ -120,7 +120,9 @@ describe('MetricReader shutdown state', () => {
     reader.shutdownImplementation = () => {
       recursiveShutdown = reader.shutdown();
       recursiveForceFlush = reader.forceFlush();
-      return Promise.all([recursiveShutdown, recursiveForceFlush]).then(() => {});
+      return Promise.all([recursiveShutdown, recursiveForceFlush]).then(
+        () => {}
+      );
     };
 
     await reader.shutdown();
