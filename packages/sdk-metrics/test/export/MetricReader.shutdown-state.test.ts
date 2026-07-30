@@ -64,9 +64,10 @@ describe('MetricReader shutdown state', () => {
     const second = reader.shutdown({ timeoutMillis: 1000 });
 
     assert.strictEqual(first, second);
+    const firstRejected = assert.rejects(first, /Operation timed out/);
+    const secondRejected = assert.rejects(second, /Operation timed out/);
     await clock.tickAsync(11);
-    await assert.rejects(first, /Operation timed out/);
-    await assert.rejects(second, /Operation timed out/);
+    await Promise.all([firstRejected, secondRejected]);
     assert.strictEqual(reader.shutdownCalls, 1);
   });
 
