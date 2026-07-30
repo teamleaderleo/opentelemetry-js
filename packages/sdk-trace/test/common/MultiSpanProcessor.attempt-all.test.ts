@@ -40,7 +40,10 @@ describe('MultiSpanProcessor attempt-all lifecycle', () => {
     };
     const processor = new MultiSpanProcessor([first, second]);
 
-    await assert.rejects(processor.shutdown(), candidate => candidate === error);
+    await assert.rejects(
+      processor.shutdown(),
+      candidate => candidate === error
+    );
     assert.strictEqual(firstCalls, 1);
     assert.strictEqual(secondCalls, 1);
   });
