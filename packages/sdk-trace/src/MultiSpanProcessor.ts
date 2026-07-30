@@ -20,23 +20,18 @@ export class MultiSpanProcessor implements SpanProcessor {
   }
 
   forceFlush(): Promise<void> {
-    const promises: Promise<void>[] = [];
+    const promises = this._spanProcessors.map(spanProcessor =>
+      Promise.resolve().then(() => spanProcessor.forceFlush())
+    );
 
-    for (const spanProcessor of this._spanProcessors) {
-      promises.push(spanProcessor.forceFlush());
-    }
-    return new Promise(resolve => {
-      Promise.all(promises)
-        .then(() => {
-          resolve();
-        })
-        .catch(error => {
-          globalErrorHandler(
-            error || new Error('MultiSpanProcessor: forceFlush failed')
-          );
-          resolve();
-        });
-    });
+    return Promise.all(promises).then(
+      () => {},
+      error => {
+        globalErrorHandler(
+          error || new Error('MultiSpanProcessor: forceFlush failed')
+        );
+      }
+    );
   }
 
   onStart(span: Span, context: Context): void {
@@ -60,15 +55,10 @@ export class MultiSpanProcessor implements SpanProcessor {
   }
 
   shutdown(): Promise<void> {
-    const promises: Promise<void>[] = [];
-
-    for (const spanProcessor of this._spanProcessors) {
-      promises.push(spanProcessor.shutdown());
-    }
-    return new Promise((resolve, reject) => {
-      Promise.all(promises).then(() => {
-        resolve();
-      }, reject);
-    });
+    return Promise.all(
+      this._spanProcessors.map(spanProcessor =>
+        Promise.resolve().then(() => spanProcessor.shutdown())
+      )
+    ).then(() => {});
   }
 }
