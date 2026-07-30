@@ -4,6 +4,7 @@
  */
 
 import * as assert from 'assert';
+import { createNoopMeter } from '@opentelemetry/api';
 import type { SpanProcessor } from '../../src';
 import { TracerProvider } from '../../src';
 
@@ -107,6 +108,26 @@ describe('TracerProvider shutdown state', () => {
     await recursiveForceFlush;
 
     assert.strictEqual(processorForceFlushCalls, 0);
+  });
+
+  it('does not consult the configured meter provider for a tracer requested after shutdown', async () => {
+    let getMeterCalls = 0;
+    const provider = new TracerProvider({
+      meterProvider: {
+        getMeter() {
+          getMeterCalls += 1;
+          return createNoopMeter();
+        },
+      },
+    });
+
+    await provider.shutdown();
+    const tracer = provider.getTracer('requested-after-shutdown');
+    const span = tracer.startSpan('non-recording-after-shutdown');
+
+    assert.strictEqual(getMeterCalls, 0);
+    assert.strictEqual(span.isRecording(), false);
+    span.end();
   });
 
   it('makes cached and new tracers non-recording as soon as shutdown begins', async () => {
