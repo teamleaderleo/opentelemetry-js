@@ -40,6 +40,7 @@ export class TracerProvider implements ApiTracerProvider {
   private readonly _activeSpanProcessor: MultiSpanProcessor;
   private readonly _forceFlushTimeoutMillis: number;
   private readonly _tracerOptions: TracerOptions;
+  private readonly _shutdownTracerOptions: TracerOptions;
   private readonly _tracers: Map<string, Tracer> = new Map();
   private readonly _shutdownOnce: BindOnceFuture<void>;
   private _shutdownInvocationActive = false;
@@ -78,6 +79,14 @@ export class TracerProvider implements ApiTracerProvider {
       },
       isShutdown: () => this._shutdownOnce.isCalled,
     };
+    this._shutdownTracerOptions = {
+      ...this._tracerOptions,
+      meterProvider: {
+        getMeter() {
+          return createNoopMeter();
+        },
+      },
+    };
   }
 
   getTracer(
@@ -89,7 +98,7 @@ export class TracerProvider implements ApiTracerProvider {
       diag.warn('A shutdown TracerProvider cannot provide a recording Tracer');
       return new Tracer(
         { name, version, schemaUrl: options?.schemaUrl },
-        this._tracerOptions
+        this._shutdownTracerOptions
       );
     }
 
@@ -109,7 +118,9 @@ export class TracerProvider implements ApiTracerProvider {
 
   forceFlush(): Promise<void> {
     if (this._shutdownInvocationActive) {
-      diag.warn('cannot force flush recursively during TracerProvider shutdown');
+      diag.warn(
+        'cannot force flush recursively during TracerProvider shutdown'
+      );
       return Promise.resolve();
     }
     if (this._shutdownOnce.isCalled) {
