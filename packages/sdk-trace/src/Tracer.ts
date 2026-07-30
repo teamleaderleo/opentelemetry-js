@@ -33,6 +33,7 @@ export class Tracer implements api.Tracer {
   private readonly _resource: Resource;
   private readonly _spanProcessor: SpanProcessor;
   private readonly _tracerMetrics: TracerMetrics;
+  private readonly _isShutdown: () => boolean;
 
   /**
    * Constructs a new Tracer instance.
@@ -47,6 +48,7 @@ export class Tracer implements api.Tracer {
     this._resource = options.resource;
     this._idGenerator = options.idGenerator;
     this._spanProcessor = options.spanProcessor;
+    this._isShutdown = options.isShutdown;
 
     const meter = options.meterProvider.getMeter(
       '@opentelemetry/sdk-trace',
@@ -64,6 +66,13 @@ export class Tracer implements api.Tracer {
     options: api.SpanOptions = {},
     context = api.context.active()
   ): api.Span {
+    if (this._isShutdown()) {
+      api.diag.debug(
+        'Calling startSpan on a shutdown TracerProvider, returning a non-recording span'
+      );
+      return api.trace.wrapSpanContext(api.INVALID_SPAN_CONTEXT);
+    }
+
     // remove span from context in case a root span is requested via options
     if (options.root) {
       context = api.trace.deleteSpan(context);
@@ -120,7 +129,6 @@ export class Tracer implements api.Tracer {
     );
 
     traceState = samplingResult.traceState ?? traceState;
-
     const traceFlags =
       samplingResult.decision === api.SamplingDecision.RECORD_AND_SAMPLED
         ? api.TraceFlags.SAMPLED
@@ -174,37 +182,6 @@ export class Tracer implements api.Tracer {
    * @param [context] Context to use to extract parent
    * @param fn function called in the context of the span and receives the newly created span as an argument
    * @returns return value of fn
-   * @example
-   *   const something = tracer.startActiveSpan('op', span => {
-   *     try {
-   *       do some work
-   *       span.setStatus({code: SpanStatusCode.OK});
-   *       return something;
-   *     } catch (err) {
-   *       span.setStatus({
-   *         code: SpanStatusCode.ERROR,
-   *         message: err.message,
-   *       });
-   *       throw err;
-   *     } finally {
-   *       span.end();
-   *     }
-   *   });
-   * @example
-   *   const span = tracer.startActiveSpan('op', span => {
-   *     try {
-   *       do some work
-   *       return span;
-   *     } catch (err) {
-   *       span.setStatus({
-   *         code: SpanStatusCode.ERROR,
-   *         message: err.message,
-   *       });
-   *       throw err;
-   *     }
-   *   });
-   *   do some more work
-   *   span.end();
    */
   startActiveSpan<F extends (span: api.Span) => ReturnType<F>>(
     name: string,
@@ -230,7 +207,6 @@ export class Tracer implements api.Tracer {
     let opts: api.SpanOptions | undefined;
     let ctx: api.Context | undefined;
     let fn: F;
-
     if (arguments.length < 2) {
       return;
     } else if (arguments.length === 2) {
@@ -247,7 +223,6 @@ export class Tracer implements api.Tracer {
     const parentContext = ctx ?? api.context.active();
     const span = this.startSpan(name, opts, parentContext);
     const contextWithSpanSet = api.trace.setSpan(parentContext, span);
-
     return api.context.with(contextWithSpanSet, fn, undefined, span);
   }
 
