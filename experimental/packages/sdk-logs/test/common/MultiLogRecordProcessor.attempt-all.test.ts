@@ -38,6 +38,33 @@ describe('MultiLogRecordProcessor attempt-all lifecycle', () => {
     assert.strictEqual(secondCalls, 1);
   });
 
+  it('uses the opening processor snapshot during shutdown', async () => {
+    const processors: LogRecordProcessor[] = [];
+    let secondCalls = 0;
+    const first: LogRecordProcessor = {
+      onEmit() {},
+      forceFlush: () => Promise.resolve(),
+      shutdown: () => {
+        processors.splice(1, 1);
+        return Promise.resolve();
+      },
+    };
+    const second: LogRecordProcessor = {
+      onEmit() {},
+      forceFlush: () => Promise.resolve(),
+      shutdown: () => {
+        secondCalls += 1;
+        return Promise.resolve();
+      },
+    };
+    processors.push(first, second);
+
+    await new MultiLogRecordProcessor(processors).shutdown();
+
+    assert.strictEqual(secondCalls, 1);
+    assert.deepStrictEqual(processors, [first]);
+  });
+
   it('rejects forceFlush after attempting every processor', async () => {
     const error = new Error('fieldwork logs forceFlush failure');
     let firstCalls = 0;
@@ -66,5 +93,32 @@ describe('MultiLogRecordProcessor attempt-all lifecycle', () => {
     );
     assert.strictEqual(firstCalls, 1);
     assert.strictEqual(secondCalls, 1);
+  });
+
+  it('uses the opening processor snapshot during forceFlush', async () => {
+    const processors: LogRecordProcessor[] = [];
+    let secondCalls = 0;
+    const first: LogRecordProcessor = {
+      onEmit() {},
+      shutdown: () => Promise.resolve(),
+      forceFlush: () => {
+        processors.splice(1, 1);
+        return Promise.resolve();
+      },
+    };
+    const second: LogRecordProcessor = {
+      onEmit() {},
+      shutdown: () => Promise.resolve(),
+      forceFlush: () => {
+        secondCalls += 1;
+        return Promise.resolve();
+      },
+    };
+    processors.push(first, second);
+
+    await new MultiLogRecordProcessor(processors).forceFlush();
+
+    assert.strictEqual(secondCalls, 1);
+    assert.deepStrictEqual(processors, [first]);
   });
 });
