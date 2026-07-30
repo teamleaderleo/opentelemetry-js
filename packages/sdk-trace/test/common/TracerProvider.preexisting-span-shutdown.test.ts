@@ -66,7 +66,10 @@ describe('TracerProvider pre-existing span shutdown boundary', () => {
 
     await provider.shutdown();
 
-    assert.throws(() => span.end(), candidate => candidate === error);
+    assert.throws(
+      () => span.end(),
+      candidate => candidate === error
+    );
     assert.strictEqual(endCalls, 1);
     assert.strictEqual(span.isRecording(), false);
   });
