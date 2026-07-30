@@ -25,9 +25,7 @@ export class MultiLogRecordProcessor implements LogRecordProcessor {
     const timeout = options?.timeoutMillis ?? 30000;
     await Promise.all(
       this.processors.map(processor =>
-        callLifecycle(() =>
-          callWithTimeout(processor.forceFlush(), timeout)
-        )
+        callLifecycle(() => callWithTimeout(processor.forceFlush(), timeout))
       )
     );
   }
