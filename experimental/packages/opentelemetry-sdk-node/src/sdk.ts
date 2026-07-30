@@ -165,6 +165,12 @@ export class NodeSDK {
 
   private _disabled?: boolean;
   private _startAttempted = false;
+  private _startInProgress = false;
+  private _shutdownRequested = false;
+  private _shutdownStarted = false;
+  private _shutdownPromise?: Promise<void>;
+  private _resolveShutdown?: () => void;
+  private _rejectShutdown?: (reason: unknown) => void;
 
   /**
    * Create a new NodeJS SDK instance
@@ -249,125 +255,173 @@ export class NodeSDK {
       return;
     }
 
+    if (this._shutdownRequested) {
+      diag.warn('NodeSDK.start() cannot be called after shutdown().');
+      return;
+    }
+
     if (this._startAttempted) {
       diag.warn('NodeSDK.start() may only be called once.');
       return;
     }
     this._startAttempted = true;
+    this._startInProgress = true;
 
-    registerInstrumentations({
-      instrumentations: this._instrumentations,
-    });
-
-    setupContextManager(this._configuration?.contextManager);
-    setupPropagator(
-      this._configuration?.textMapPropagator === null
-        ? null // null means don't set, so we cannot fall back to env config.
-        : (this._configuration?.textMapPropagator ?? getPropagatorFromEnv())
-    );
-
-    if (this._autoDetectResources) {
-      const internalConfig: ResourceDetectionConfig = {
-        detectors: this._resourceDetectors,
-      };
-
-      this._resource = this._resource.merge(detectResources(internalConfig));
-    }
-
-    this._resource =
-      this._serviceName === undefined
-        ? this._resource
-        : this._resource.merge(
-            resourceFromAttributes({
-              [ATTR_SERVICE_NAME]: this._serviceName,
-            })
-          );
-
-    // While SDK metrics are unstable, we require an opt-in.
-    // https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/
-    const sdkMetricsEnabled = getBooleanFromEnv(
-      'OTEL_NODE_EXPERIMENTAL_SDK_METRICS'
-    );
-
-    if (
-      this._meterProviderConfig?.readers &&
-      // only register if there is a reader, otherwise we waste compute/memory.
-      this._meterProviderConfig.readers.length > 0
-    ) {
-      const meterProvider = new MeterProvider({
-        resource: this._resource,
-        views: this._meterProviderConfig?.views ?? [],
-        readers: this._meterProviderConfig.readers,
-        sdkMetricsEnabled,
+    try {
+      registerInstrumentations({
+        instrumentations: this._instrumentations,
       });
 
-      this._meterProvider = meterProvider;
-      metrics.setGlobalMeterProvider(meterProvider);
+      setupContextManager(this._configuration?.contextManager);
+      setupPropagator(
+        this._configuration?.textMapPropagator === null
+          ? null // null means don't set, so we cannot fall back to env config.
+          : (this._configuration?.textMapPropagator ?? getPropagatorFromEnv())
+      );
 
-      // TODO: This is a workaround to fix https://github.com/open-telemetry/opentelemetry-js/issues/3609
-      // If the MeterProvider is not yet registered when instrumentations are registered, all metrics are dropped.
-      // This code is obsolete once https://github.com/open-telemetry/opentelemetry-js/issues/3622 is implemented.
-      for (const instrumentation of this._instrumentations) {
-        instrumentation.setMeterProvider(metrics.getMeterProvider());
+      if (this._autoDetectResources) {
+        const internalConfig: ResourceDetectionConfig = {
+          detectors: this._resourceDetectors,
+        };
+
+        this._resource = this._resource.merge(detectResources(internalConfig));
       }
-    }
 
-    // Determine `spanProcessors` from multiple possible options.
-    let spanProcessors: SpanProcessor[];
-    if (this._configuration?.spanProcessors) {
-      spanProcessors = this._configuration.spanProcessors;
-    } else if (this._configuration?.spanProcessor) {
-      spanProcessors = [this._configuration.spanProcessor];
-    } else if (this._configuration?.traceExporter) {
-      spanProcessors = [
-        createBatchSpanProcessorFromEnv(
-          this._configuration.traceExporter!,
+      this._resource =
+        this._serviceName === undefined
+          ? this._resource
+          : this._resource.merge(
+              resourceFromAttributes({
+                [ATTR_SERVICE_NAME]: this._serviceName,
+              })
+            );
+
+      // While SDK metrics are unstable, we require an opt-in.
+      // https://opentelemetry.io/docs/specs/semconv/otel/sdk-metrics/
+      const sdkMetricsEnabled = getBooleanFromEnv(
+        'OTEL_NODE_EXPERIMENTAL_SDK_METRICS'
+      );
+
+      if (
+        this._meterProviderConfig?.readers &&
+        // only register if there is a reader, otherwise we waste compute/memory.
+        this._meterProviderConfig.readers.length > 0
+      ) {
+        const meterProvider = new MeterProvider({
+          resource: this._resource,
+          views: this._meterProviderConfig?.views ?? [],
+          readers: this._meterProviderConfig.readers,
+          sdkMetricsEnabled,
+        });
+
+        this._meterProvider = meterProvider;
+        metrics.setGlobalMeterProvider(meterProvider);
+
+        // TODO: This is a workaround to fix https://github.com/open-telemetry/opentelemetry-js/issues/3609
+        // If the MeterProvider is not yet registered when instrumentations are registered, all metrics are dropped.
+        // This code is obsolete once https://github.com/open-telemetry/opentelemetry-js/issues/3622 is implemented.
+        for (const instrumentation of this._instrumentations) {
+          instrumentation.setMeterProvider(metrics.getMeterProvider());
+        }
+      }
+
+      // Determine `spanProcessors` from multiple possible options.
+      let spanProcessors: SpanProcessor[];
+      if (this._configuration?.spanProcessors) {
+        spanProcessors = this._configuration.spanProcessors;
+      } else if (this._configuration?.spanProcessor) {
+        spanProcessors = [this._configuration.spanProcessor];
+      } else if (this._configuration?.traceExporter) {
+        spanProcessors = [
+          createBatchSpanProcessorFromEnv(
+            this._configuration.traceExporter!,
+            sdkMetricsEnabled ? this._meterProvider : undefined
+          ),
+        ];
+      } else {
+        spanProcessors = getSpanProcessorsFromEnv(
           sdkMetricsEnabled ? this._meterProvider : undefined
-        ),
-      ];
-    } else {
-      spanProcessors = getSpanProcessorsFromEnv(
-        sdkMetricsEnabled ? this._meterProvider : undefined
-      );
-    }
+        );
+      }
 
-    // Only register if there is a span processor
-    if (spanProcessors.length > 0) {
-      this._tracerProvider = new TracerProvider({
-        sampler: this._configuration?.sampler ?? createSamplerFromEnv(),
-        spanLimits: {
-          ...createSpanLimitsFromEnv(),
-          ...this._configuration?.spanLimits,
-        },
-        resource: this._resource,
-        meterProvider: sdkMetricsEnabled ? this._meterProvider : undefined,
-        idGenerator: this._configuration?.idGenerator,
-        spanProcessors,
-      });
-      trace.setGlobalTracerProvider(this._tracerProvider);
-    }
+      // Only register if there is a span processor
+      if (spanProcessors.length > 0) {
+        this._tracerProvider = new TracerProvider({
+          sampler: this._configuration?.sampler ?? createSamplerFromEnv(),
+          spanLimits: {
+            ...createSpanLimitsFromEnv(),
+            ...this._configuration?.spanLimits,
+          },
+          resource: this._resource,
+          meterProvider: sdkMetricsEnabled ? this._meterProvider : undefined,
+          idGenerator: this._configuration?.idGenerator,
+          spanProcessors,
+        });
+        trace.setGlobalTracerProvider(this._tracerProvider);
+      }
 
-    if (!this._loggerProviderConfig) {
-      this.configureLoggerProviderFromEnv(
-        sdkMetricsEnabled ? this._meterProvider : undefined
-      );
-    }
+      if (!this._loggerProviderConfig) {
+        this.configureLoggerProviderFromEnv(
+          sdkMetricsEnabled ? this._meterProvider : undefined
+        );
+      }
 
-    if (this._loggerProviderConfig) {
-      const loggerProvider = new LoggerProvider({
-        ...getLoggerProviderConfigFromEnv(),
-        resource: this._resource,
-        processors: this._loggerProviderConfig.logRecordProcessors,
-        meterProvider: sdkMetricsEnabled ? this._meterProvider : undefined,
-      });
+      if (this._loggerProviderConfig) {
+        const loggerProvider = new LoggerProvider({
+          ...getLoggerProviderConfigFromEnv(),
+          resource: this._resource,
+          processors: this._loggerProviderConfig.logRecordProcessors,
+          meterProvider: sdkMetricsEnabled ? this._meterProvider : undefined,
+        });
 
-      this._loggerProvider = loggerProvider;
+        this._loggerProvider = loggerProvider;
 
-      logs.setGlobalLoggerProvider(loggerProvider);
+        logs.setGlobalLoggerProvider(loggerProvider);
+      }
+    } finally {
+      this._startInProgress = false;
+      if (this._shutdownRequested) {
+        this._beginShutdown();
+      }
     }
   }
 
   public shutdown(): Promise<void> {
+    if (this._shutdownPromise) {
+      return this._shutdownPromise;
+    }
+
+    this._shutdownRequested = true;
+    this._shutdownPromise = new Promise<void>((resolve, reject) => {
+      this._resolveShutdown = resolve;
+      this._rejectShutdown = reject;
+    });
+
+    if (!this._startInProgress) {
+      this._beginShutdown();
+    }
+
+    return this._shutdownPromise;
+  }
+
+  private _beginShutdown(): void {
+    if (this._shutdownStarted || !this._shutdownRequested) {
+      return;
+    }
+    this._shutdownStarted = true;
+
+    let shutdownResult: Promise<void>;
+    try {
+      shutdownResult = this._shutdownProviders();
+    } catch (error) {
+      this._rejectShutdown?.(error);
+      return;
+    }
+
+    void shutdownResult.then(this._resolveShutdown, this._rejectShutdown);
+  }
+
+  private _shutdownProviders(): Promise<void> {
     const promises: Promise<unknown>[] = [];
     if (this._tracerProvider) {
       promises.push(this._tracerProvider.shutdown());
