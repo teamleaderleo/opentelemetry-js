@@ -197,7 +197,7 @@ export class Tracer implements api.Tracer {
    *     } finally {
    *       span.end();
    *     }
-   *   }
+   *   });
    * @example
    *   const span = tracer.startActiveSpan('op', span => {
    *     try {
@@ -210,7 +210,7 @@ export class Tracer implements api.Tracer {
    *       });
    *       throw err;
    *     }
-   *   }
+   *   });
    *   do some more work
    *   span.end();
    */
@@ -238,6 +238,7 @@ export class Tracer implements api.Tracer {
     let opts: api.SpanOptions | undefined;
     let ctx: api.Context | undefined;
     let fn: F;
+
     if (arguments.length < 2) {
       return;
     } else if (arguments.length === 2) {
