@@ -48,6 +48,35 @@ describe('MultiSpanProcessor attempt-all lifecycle', () => {
     assert.strictEqual(secondCalls, 1);
   });
 
+  it('uses the opening processor snapshot during shutdown', async () => {
+    const processors: SpanProcessor[] = [];
+    let secondCalls = 0;
+    const first: SpanProcessor = {
+      onStart() {},
+      onEnd() {},
+      forceFlush: () => Promise.resolve(),
+      shutdown: () => {
+        processors.splice(1, 1);
+        return Promise.resolve();
+      },
+    };
+    const second: SpanProcessor = {
+      onStart() {},
+      onEnd() {},
+      forceFlush: () => Promise.resolve(),
+      shutdown: () => {
+        secondCalls += 1;
+        return Promise.resolve();
+      },
+    };
+    processors.push(first, second);
+
+    await new MultiSpanProcessor(processors).shutdown();
+
+    assert.strictEqual(secondCalls, 1);
+    assert.deepStrictEqual(processors, [first]);
+  });
+
   it('reports forceFlush failure after attempting every processor', async () => {
     const error = new Error('fieldwork trace forceFlush failure');
     let firstCalls = 0;
@@ -80,5 +109,34 @@ describe('MultiSpanProcessor attempt-all lifecycle', () => {
     assert.strictEqual(firstCalls, 1);
     assert.strictEqual(secondCalls, 1);
     assert.strictEqual(handledError, error);
+  });
+
+  it('uses the opening processor snapshot during forceFlush', async () => {
+    const processors: SpanProcessor[] = [];
+    let secondCalls = 0;
+    const first: SpanProcessor = {
+      onStart() {},
+      onEnd() {},
+      shutdown: () => Promise.resolve(),
+      forceFlush: () => {
+        processors.splice(1, 1);
+        return Promise.resolve();
+      },
+    };
+    const second: SpanProcessor = {
+      onStart() {},
+      onEnd() {},
+      shutdown: () => Promise.resolve(),
+      forceFlush: () => {
+        secondCalls += 1;
+        return Promise.resolve();
+      },
+    };
+    processors.push(first, second);
+
+    await new MultiSpanProcessor(processors).forceFlush();
+
+    assert.strictEqual(secondCalls, 1);
+    assert.deepStrictEqual(processors, [first]);
   });
 });
