@@ -25,7 +25,12 @@ import type { AggregationOption } from '../view/AggregationOption';
 import type { CardinalitySelector } from './CardinalitySelector';
 import { MetricReaderMetrics } from './MetricReaderMetrics';
 import { VERSION } from '../version';
-import { hrTime, hrTimeDuration, hrTimeToSeconds } from '@opentelemetry/core';
+import {
+  BindOnceFuture,
+  hrTime,
+  hrTimeDuration,
+  hrTimeToSeconds,
+} from '@opentelemetry/core';
 
 export interface MetricReaderOptions {
   /**
@@ -44,8 +49,7 @@ export interface MetricReaderOptions {
    */
   aggregationTemporalitySelector?: AggregationTemporalitySelector;
   /**
-   * Cardinality selector based on metric instrument types. If not configured,
-   * a default value is used.
+   * Cardinality selector based on metric instrument types. If not configured, a default value is used.
    *
    * <p> NOTE: the provided function MUST be pure
    */
@@ -129,13 +133,16 @@ export interface IMetricReader {
 }
 
 /**
- * A registered reader of metrics that, when linked to a {@link MetricProducer}, offers global
- * control over metrics.
+ * A registered reader of metrics, which, when linked to a {@link MetricProducer},
+ * offers global control over metrics.
  */
 export abstract class MetricReader implements IMetricReader {
-  // Tracks the shutdown state.
-  // TODO: use BindOncePromise here once a new version of @opentelemetry/core is available.
-  private _shutdown = false;
+  private readonly _shutdownOnce: BindOnceFuture<
+    void,
+    MetricReader,
+    (options?: ShutdownOptions) => Promise<void>
+  >;
+  private _shutdownInvocationActive = false;
   // Additional MetricProducers which will be combined with the SDK's output
   private _metricProducers: MetricProducer[];
   // MetricProducer used by this instance which produces metrics from the SDK
@@ -161,6 +168,7 @@ export abstract class MetricReader implements IMetricReader {
       this._otelComponentType,
       api.createNoopMeter()
     );
+    this._shutdownOnce = new BindOnceFuture(this._shutdown, this);
   }
 
   setMetricProducer(metricProducer: MetricProducer) {
@@ -201,7 +209,7 @@ export abstract class MetricReader implements IMetricReader {
   selectCardinalityLimit(instrumentType: InstrumentType): number {
     return this._cardinalitySelector
       ? this._cardinalitySelector(instrumentType)
-      : 2000; // default value if no selector is provided
+      : 2000; // default value
   }
 
   /**
@@ -235,7 +243,7 @@ export abstract class MetricReader implements IMetricReader {
     }
 
     // Subsequent invocations to collect are not allowed. SDKs SHOULD return some failure for these calls.
-    if (this._shutdown) {
+    if (this._shutdownOnce.isCalled) {
       throw new Error('MetricReader is shutdown');
     }
 
@@ -257,7 +265,12 @@ export abstract class MetricReader implements IMetricReader {
     const errors = sdkCollectionResults.errors.concat(
       additionalCollectionResults.flatMap(result => result.errors)
     );
-
+    const resource = sdkCollectionResults.resourceMetrics.resource;
+    const scopeMetrics = sdkCollectionResults.resourceMetrics.scopeMetrics.concat(
+      additionalCollectionResults.flatMap(
+        result => result.resourceMetrics.scopeMetrics
+      )
+    );
     const collectDuration = hrTimeToSeconds(hrTimeDuration(startTime, endTime));
     this._selfObsMetrics.recordCollection(
       collectDuration,
@@ -265,14 +278,6 @@ export abstract class MetricReader implements IMetricReader {
         ? ((errors[0] as Error).name ?? 'collect_error')
         : undefined
     );
-
-    const resource = sdkCollectionResults.resourceMetrics.resource;
-    const scopeMetrics =
-      sdkCollectionResults.resourceMetrics.scopeMetrics.concat(
-        additionalCollectionResults.flatMap(
-          result => result.resourceMetrics.scopeMetrics
-        )
-      );
     return {
       resourceMetrics: {
         resource,
@@ -282,27 +287,39 @@ export abstract class MetricReader implements IMetricReader {
     };
   }
 
-  async shutdown(options?: ShutdownOptions): Promise<void> {
-    // Do not call shutdown again if it has already been called.
-    if (this._shutdown) {
+  shutdown(options?: ShutdownOptions): Promise<void> {
+    if (this._shutdownInvocationActive) {
+      api.diag.error('Recursive MetricReader shutdown is ignored.');
+      return Promise.resolve();
+    }
+    if (this._shutdownOnce.isCalled) {
       api.diag.error('Cannot call shutdown twice.');
-      return;
+      return this._shutdownOnce.promise;
     }
+    return this._shutdownOnce.call(options);
+  }
 
-    // No timeout if timeoutMillis is undefined or null.
-    if (options?.timeoutMillis == null) {
-      await this.onShutdown();
-    } else {
-      await callWithTimeout(this.onShutdown(), options.timeoutMillis);
+  private _shutdown(options?: ShutdownOptions): Promise<void> {
+    this._shutdownInvocationActive = true;
+    try {
+      // No timeout if timeoutMillis is undefined or null.
+      if (options?.timeoutMillis == null) {
+        return this.onShutdown();
+      }
+      return callWithTimeout(this.onShutdown(), options.timeoutMillis);
+    } finally {
+      this._shutdownInvocationActive = false;
     }
-
-    this._shutdown = true;
   }
 
   async forceFlush(options?: ForceFlushOptions): Promise<void> {
-    if (this._shutdown) {
-      api.diag.warn('Cannot forceFlush on already shutdown MetricReader.');
+    if (this._shutdownInvocationActive) {
+      api.diag.warn('Cannot forceFlush recursively during MetricReader shutdown.');
       return;
+    }
+    if (this._shutdownOnce.isCalled) {
+      api.diag.warn('Cannot forceFlush on already shutdown MetricReader.');
+      return this._shutdownOnce.promise;
     }
 
     // No timeout if timeoutMillis is undefined or null.
