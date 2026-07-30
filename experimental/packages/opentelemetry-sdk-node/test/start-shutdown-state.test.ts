@@ -273,7 +273,10 @@ describe('NodeSDK start/shutdown state', () => {
     });
     sdkRef.current = sdk;
 
-    assert.throws(() => sdk.start(), candidate => candidate === startupError);
+    assert.throws(
+      () => sdk.start(),
+      candidate => candidate === startupError
+    );
     assert.ok(reentrantShutdown);
     await reentrantShutdown;
 
@@ -304,7 +307,10 @@ describe('NodeSDK start/shutdown state', () => {
     });
     sdkRef.current = sdk;
 
-    assert.throws(() => sdk.start(), candidate => candidate === startupError);
+    assert.throws(
+      () => sdk.start(),
+      candidate => candidate === startupError
+    );
     assert.ok(reentrantShutdown);
     await reentrantShutdown;
 
@@ -335,7 +341,10 @@ describe('NodeSDK start/shutdown state', () => {
     });
     sdkRef.current = sdk;
 
-    assert.throws(() => sdk.start(), candidate => candidate === startupError);
+    assert.throws(
+      () => sdk.start(),
+      candidate => candidate === startupError
+    );
     assert.ok(reentrantShutdown);
     await reentrantShutdown;
 
@@ -365,7 +374,10 @@ describe('NodeSDK start/shutdown state', () => {
     });
     sdkRef.current = sdk;
 
-    assert.throws(() => sdk.start(), candidate => candidate === startupError);
+    assert.throws(
+      () => sdk.start(),
+      candidate => candidate === startupError
+    );
     assert.ok(reentrantShutdown);
     await assert.rejects(
       reentrantShutdown,
