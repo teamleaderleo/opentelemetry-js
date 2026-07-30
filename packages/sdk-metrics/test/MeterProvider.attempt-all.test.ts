@@ -50,7 +50,7 @@ describe('MeterProvider attempt-all lifecycle', () => {
   it('uses the opening collector snapshot during shutdown', async () => {
     const first = new TestMetricReader();
     const second = new TestMetricReader();
-    let removeSecond = () => {
+    let removeSecond: () => void = () => {
       throw new Error('collector mutation was not initialized');
     };
     let secondCalls = 0;
@@ -108,7 +108,7 @@ describe('MeterProvider attempt-all lifecycle', () => {
   it('uses the opening collector snapshot during forceFlush', async () => {
     const first = new TestMetricReader();
     const second = new TestMetricReader();
-    let removeSecond = () => {
+    let removeSecond: () => void = () => {
       throw new Error('collector mutation was not initialized');
     };
     let removedCollector: unknown;
