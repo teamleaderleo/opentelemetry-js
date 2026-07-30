@@ -42,6 +42,7 @@ export class TracerProvider implements ApiTracerProvider {
   private readonly _tracerOptions: TracerOptions;
   private readonly _tracers: Map<string, Tracer> = new Map();
   private readonly _shutdownOnce: BindOnceFuture<void>;
+  private _shutdownInvocationActive = false;
 
   constructor(options: TracerProviderOptions = {}) {
     this._forceFlushTimeoutMillis = options.forceFlushTimeoutMillis ?? 30000;
@@ -107,6 +108,10 @@ export class TracerProvider implements ApiTracerProvider {
   }
 
   forceFlush(): Promise<void> {
+    if (this._shutdownInvocationActive) {
+      diag.warn('cannot force flush recursively during TracerProvider shutdown');
+      return Promise.resolve();
+    }
     if (this._shutdownOnce.isCalled) {
       diag.warn('invalid attempt to force flush after TracerProvider shutdown');
       return this._shutdownOnce.promise;
@@ -161,6 +166,10 @@ export class TracerProvider implements ApiTracerProvider {
   }
 
   shutdown(): Promise<void> {
+    if (this._shutdownInvocationActive) {
+      diag.warn('recursive TracerProvider shutdown is ignored');
+      return Promise.resolve();
+    }
     if (this._shutdownOnce.isCalled) {
       diag.warn('shutdown may only be called once per TracerProvider');
       return this._shutdownOnce.promise;
@@ -169,7 +178,12 @@ export class TracerProvider implements ApiTracerProvider {
   }
 
   private _shutdown(): Promise<void> {
-    return this._activeSpanProcessor.shutdown();
+    this._shutdownInvocationActive = true;
+    try {
+      return this._activeSpanProcessor.shutdown();
+    } finally {
+      this._shutdownInvocationActive = false;
+    }
   }
 
   [inspectCustom](
