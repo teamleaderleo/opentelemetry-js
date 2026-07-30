@@ -59,6 +59,7 @@ export interface TracerOptions {
   idGenerator: IdGenerator;
   spanProcessor: SpanProcessor;
   meterProvider: MeterProvider;
+  isShutdown: () => boolean;
 }
 
 /** Global configuration of trace service */

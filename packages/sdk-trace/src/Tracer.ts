@@ -33,6 +33,7 @@ export class Tracer implements api.Tracer {
   private readonly _resource: Resource;
   private readonly _spanProcessor: SpanProcessor;
   private readonly _tracerMetrics: TracerMetrics;
+  private readonly _isShutdown: () => boolean;
 
   /**
    * Constructs a new Tracer instance.
@@ -47,6 +48,7 @@ export class Tracer implements api.Tracer {
     this._resource = options.resource;
     this._idGenerator = options.idGenerator;
     this._spanProcessor = options.spanProcessor;
+    this._isShutdown = options.isShutdown;
 
     const meter = options.meterProvider.getMeter(
       '@opentelemetry/sdk-trace',
@@ -64,6 +66,13 @@ export class Tracer implements api.Tracer {
     options: api.SpanOptions = {},
     context = api.context.active()
   ): api.Span {
+    if (this._isShutdown()) {
+      api.diag.debug(
+        'Calling startSpan on a shutdown TracerProvider, returning a non-recording span'
+      );
+      return api.trace.wrapSpanContext(api.INVALID_SPAN_CONTEXT);
+    }
+
     // remove span from context in case a root span is requested via options
     if (options.root) {
       context = api.trace.deleteSpan(context);
