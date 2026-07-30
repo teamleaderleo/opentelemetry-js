@@ -88,6 +88,17 @@ describe('MetricReader shutdown state', () => {
     assert.strictEqual(reader.shutdownCalls, 1);
   });
 
+  it('preserves the unbound collection diagnostic after shutdown', async () => {
+    const reader = new ControlledMetricReader();
+
+    await reader.shutdown();
+
+    await assert.rejects(
+      reader.collect(),
+      /MetricReader is not bound to a MetricProducer/
+    );
+  });
+
   it('becomes terminal and returns the shutdown result once shutdown begins', async () => {
     const reader = new ControlledMetricReader();
     reader.setMetricProducer(new TestMetricProducer());
