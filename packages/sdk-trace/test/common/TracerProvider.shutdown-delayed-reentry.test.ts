@@ -35,7 +35,6 @@ function processor(shutdown: () => Promise<void>): SpanProcessor {
 
 describe('TracerProvider delayed shutdown reentry', () => {
   it('records a delayed processor shutdown self-dependency while an external caller joins', async () => {
-    let provider!: TracerProvider;
     let nestedShutdown: Promise<void> | undefined;
     let shutdownCalls = 0;
     const spanProcessor = processor(async () => {
@@ -44,7 +43,7 @@ describe('TracerProvider delayed shutdown reentry', () => {
       nestedShutdown = provider.shutdown();
       return nestedShutdown;
     });
-    provider = new TracerProvider({ spanProcessors: [spanProcessor] });
+    const provider = new TracerProvider({ spanProcessors: [spanProcessor] });
 
     const outerShutdown = provider.shutdown();
     await nextTurn();
@@ -58,7 +57,6 @@ describe('TracerProvider delayed shutdown reentry', () => {
   });
 
   it('records delayed forceFlush reentry using the same pending shutdown result', async () => {
-    let provider!: TracerProvider;
     let nestedForceFlush: Promise<void> | undefined;
     let processorForceFlushCalls = 0;
     const spanProcessor: SpanProcessor = {
@@ -74,7 +72,7 @@ describe('TracerProvider delayed shutdown reentry', () => {
         return nestedForceFlush;
       },
     };
-    provider = new TracerProvider({ spanProcessors: [spanProcessor] });
+    const provider = new TracerProvider({ spanProcessors: [spanProcessor] });
 
     const outerShutdown = provider.shutdown();
     await nextTurn();
