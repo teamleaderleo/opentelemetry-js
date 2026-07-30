@@ -9,7 +9,6 @@ import { LoggerProvider } from '../../src';
 
 describe('LoggerProvider shutdown reentry', () => {
   it('contains direct recursive shutdown from a processor', async () => {
-    let provider: LoggerProvider;
     let shutdownCalls = 0;
     let recursiveShutdown: Promise<void> | undefined;
     const processor: LogRecordProcessor = {
@@ -21,7 +20,7 @@ describe('LoggerProvider shutdown reentry', () => {
         return recursiveShutdown;
       },
     };
-    provider = new LoggerProvider({ processors: [processor] });
+    const provider = new LoggerProvider({ processors: [processor] });
 
     await provider.shutdown();
     assert.ok(recursiveShutdown);
@@ -31,7 +30,6 @@ describe('LoggerProvider shutdown reentry', () => {
   });
 
   it('contains direct force flush from processor shutdown', async () => {
-    let provider: LoggerProvider;
     let forceFlushCalls = 0;
     let recursiveForceFlush: Promise<void> | undefined;
     const processor: LogRecordProcessor = {
@@ -45,7 +43,7 @@ describe('LoggerProvider shutdown reentry', () => {
         return recursiveForceFlush;
       },
     };
-    provider = new LoggerProvider({ processors: [processor] });
+    const provider = new LoggerProvider({ processors: [processor] });
 
     await provider.shutdown();
     assert.ok(recursiveForceFlush);
