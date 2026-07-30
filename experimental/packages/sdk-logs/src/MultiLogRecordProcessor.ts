@@ -22,9 +22,10 @@ export class MultiLogRecordProcessor implements LogRecordProcessor {
   }
 
   public async forceFlush(options?: ForceFlushOptions): Promise<void> {
+    const processors = this.processors.slice();
     const timeout = options?.timeoutMillis ?? 30000;
     await Promise.all(
-      this.processors.map(processor =>
+      processors.map(processor =>
         callLifecycle(() => callWithTimeout(processor.forceFlush(), timeout))
       )
     );
@@ -37,10 +38,9 @@ export class MultiLogRecordProcessor implements LogRecordProcessor {
   }
 
   public async shutdown(): Promise<void> {
+    const processors = this.processors.slice();
     await Promise.all(
-      this.processors.map(processor =>
-        callLifecycle(() => processor.shutdown())
-      )
+      processors.map(processor => callLifecycle(() => processor.shutdown()))
     );
   }
 
