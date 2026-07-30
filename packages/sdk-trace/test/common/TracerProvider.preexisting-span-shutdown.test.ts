@@ -43,7 +43,7 @@ describe('TracerProvider pre-existing span shutdown boundary', () => {
     await shutdown;
   });
 
-  it('can invoke a processor after processor shutdown has completed', async () => {
+  it('invokes a healthy processor before shutdown, then calls it again after shutdown', async () => {
     const error = new Error('onEnd called after processor shutdown');
     let processorShutdown = false;
     let endCalls = 0;
@@ -62,15 +62,20 @@ describe('TracerProvider pre-existing span shutdown boundary', () => {
       },
     };
     const provider = new TracerProvider({ spanProcessors: [processor] });
-    const span = provider.getTracer('pre-existing').startSpan('after');
+    const tracer = provider.getTracer('pre-existing');
+    const healthySpan = tracer.startSpan('before');
+    const lateSpan = tracer.startSpan('after');
+
+    assert.doesNotThrow(() => healthySpan.end());
+    assert.strictEqual(endCalls, 1);
 
     await provider.shutdown();
 
     assert.throws(
-      () => span.end(),
+      () => lateSpan.end(),
       candidate => candidate === error
     );
-    assert.strictEqual(endCalls, 1);
-    assert.strictEqual(span.isRecording(), false);
+    assert.strictEqual(endCalls, 2);
+    assert.strictEqual(lateSpan.isRecording(), false);
   });
 });
