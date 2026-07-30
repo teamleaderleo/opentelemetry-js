@@ -108,10 +108,7 @@ describe('NodeSDK start-state guard', () => {
   });
 
   it('does not replace its provider on repeated start', async () => {
-    const setGlobalTracerProvider = Sinon.spy(
-      trace,
-      'setGlobalTracerProvider'
-    );
+    const setGlobalTracerProvider = Sinon.spy(trace, 'setGlobalTracerProvider');
     const warn = Sinon.spy(diag, 'warn');
     const sdk = new NodeSDK({
       autoDetectResources: false,
@@ -132,10 +129,7 @@ describe('NodeSDK start-state guard', () => {
   });
 
   it('does not restart the same instance after shutdown', async () => {
-    const setGlobalTracerProvider = Sinon.spy(
-      trace,
-      'setGlobalTracerProvider'
-    );
+    const setGlobalTracerProvider = Sinon.spy(trace, 'setGlobalTracerProvider');
     const sdk = new NodeSDK({
       autoDetectResources: false,
       spanProcessors: [new NoopSpanProcessor()],
@@ -153,10 +147,7 @@ describe('NodeSDK start-state guard', () => {
   });
 
   it('blocks a reentrant start before registration repeats', async () => {
-    const setGlobalTracerProvider = Sinon.spy(
-      trace,
-      'setGlobalTracerProvider'
-    );
+    const setGlobalTracerProvider = Sinon.spy(trace, 'setGlobalTracerProvider');
     const contextManager = new ReentrantContextManager();
     const sdk = new NodeSDK({
       autoDetectResources: false,
