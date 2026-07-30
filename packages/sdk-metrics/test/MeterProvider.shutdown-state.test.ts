@@ -65,7 +65,7 @@ describe('MeterProvider shutdown state', () => {
     assert.strictEqual(shutdownCalls, 1);
   });
 
-  it('returns the shutdown result instead of force flushing after shutdown begins', async () => {
+  it('becomes terminal and returns the shutdown result once shutdown begins', async () => {
     const reader = new TestMetricReader();
     let forceFlushCalls = 0;
     let resolveShutdown: () => void = () => {};
@@ -78,12 +78,19 @@ describe('MeterProvider shutdown state', () => {
       return Promise.resolve();
     });
     const provider = new MeterProvider({ readers: [reader] });
+    const getMeterSharedState = sinon.spy(
+      (provider as unknown as { _sharedState: { getMeterSharedState: () => unknown } })
+        ._sharedState,
+      'getMeterSharedState'
+    );
 
     const shutdown = provider.shutdown();
     const forceFlush = provider.forceFlush();
+    provider.getMeter('requested-during-shutdown');
 
     assert.strictEqual(forceFlush, shutdown);
     assert.strictEqual(forceFlushCalls, 0);
+    sinon.assert.notCalled(getMeterSharedState);
 
     resolveShutdown();
     await forceFlush;
