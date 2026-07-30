@@ -26,7 +26,6 @@ async function settlesWithin(
 
 describe('LoggerProvider delayed shutdown reentry', () => {
   it('records a delayed processor shutdown self-dependency while an external caller joins', async () => {
-    let provider!: LoggerProvider;
     let nestedShutdown: Promise<void> | undefined;
     let shutdownCalls = 0;
     const processor: LogRecordProcessor = {
@@ -39,7 +38,7 @@ describe('LoggerProvider delayed shutdown reentry', () => {
         return nestedShutdown;
       },
     };
-    provider = new LoggerProvider({ processors: [processor] });
+    const provider = new LoggerProvider({ processors: [processor] });
 
     const outerShutdown = provider.shutdown();
     await nextTurn();
@@ -53,7 +52,6 @@ describe('LoggerProvider delayed shutdown reentry', () => {
   });
 
   it('records delayed forceFlush reentry using the same pending shutdown result', async () => {
-    let provider!: LoggerProvider;
     let nestedForceFlush: Promise<void> | undefined;
     let forceFlushCalls = 0;
     const processor: LogRecordProcessor = {
@@ -68,7 +66,7 @@ describe('LoggerProvider delayed shutdown reentry', () => {
         return nestedForceFlush;
       },
     };
-    provider = new LoggerProvider({ processors: [processor] });
+    const provider = new LoggerProvider({ processors: [processor] });
 
     const outerShutdown = provider.shutdown();
     await nextTurn();
