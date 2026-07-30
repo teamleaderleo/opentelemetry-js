@@ -40,11 +40,8 @@ export interface MeterProviderOptions {
  */
 export class MeterProvider implements IMeterProvider {
   private _sharedState: MeterProviderSharedState;
-  private readonly _shutdownOnce: BindOnceFuture<
-    void,
-    MeterProvider,
-    (options?: ShutdownOptions) => Promise<void>
-  >;
+  private readonly _shutdownOnce: BindOnceFuture<void>;
+  private _shutdownOptions?: ShutdownOptions;
   private _shutdownInvocationActive = false;
 
   constructor(options?: MeterProviderOptions) {
@@ -52,7 +49,6 @@ export class MeterProvider implements IMeterProvider {
       options?.resource ?? defaultResource()
     );
     this._shutdownOnce = new BindOnceFuture(this._shutdown, this);
-
     if (options?.views != null && options.views.length > 0) {
       for (const viewOption of options.views) {
         this._sharedState.viewRegistry.addView(new View(viewOption));
@@ -103,15 +99,16 @@ export class MeterProvider implements IMeterProvider {
       diag.warn('shutdown may only be called once per MeterProvider');
       return this._shutdownOnce.promise;
     }
-    return this._shutdownOnce.call(options);
+    this._shutdownOptions = options;
+    return this._shutdownOnce.call();
   }
 
-  private _shutdown(options?: ShutdownOptions): Promise<void> {
+  private _shutdown(): Promise<void> {
     this._shutdownInvocationActive = true;
     try {
       return Promise.all(
         this._sharedState.metricCollectors.map(collector => {
-          return collector.shutdown(options);
+          return collector.shutdown(this._shutdownOptions);
         })
       ).then(() => {});
     } finally {
