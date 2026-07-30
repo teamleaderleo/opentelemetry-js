@@ -129,6 +129,7 @@ export class Tracer implements api.Tracer {
     );
 
     traceState = samplingResult.traceState ?? traceState;
+
     const traceFlags =
       samplingResult.decision === api.SamplingDecision.RECORD_AND_SAMPLED
         ? api.TraceFlags.SAMPLED
@@ -255,6 +256,7 @@ export class Tracer implements api.Tracer {
     const parentContext = ctx ?? api.context.active();
     const span = this.startSpan(name, opts, parentContext);
     const contextWithSpanSet = api.trace.setSpan(parentContext, span);
+
     return api.context.with(contextWithSpanSet, fn, undefined, span);
   }
 
