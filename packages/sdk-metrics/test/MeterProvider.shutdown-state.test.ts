@@ -79,8 +79,11 @@ describe('MeterProvider shutdown state', () => {
     });
     const provider = new MeterProvider({ readers: [reader] });
     const getMeterSharedState = sinon.spy(
-      (provider as unknown as { _sharedState: { getMeterSharedState: () => unknown } })
-        ._sharedState,
+      (
+        provider as unknown as {
+          _sharedState: { getMeterSharedState: () => unknown };
+        }
+      )._sharedState,
       'getMeterSharedState'
     );
 
@@ -98,7 +101,6 @@ describe('MeterProvider shutdown state', () => {
 
   it('contains direct recursive shutdown and force flush from a reader', async () => {
     const reader = new TestMetricReader();
-    let provider: MeterProvider;
     let recursiveShutdown: Promise<void> | undefined;
     let recursiveForceFlush: Promise<void> | undefined;
     let readerForceFlushCalls = 0;
@@ -106,13 +108,15 @@ describe('MeterProvider shutdown state', () => {
     sinon.stub(reader, 'shutdown').callsFake(() => {
       recursiveShutdown = provider.shutdown();
       recursiveForceFlush = provider.forceFlush();
-      return Promise.all([recursiveShutdown, recursiveForceFlush]).then(() => {});
+      return Promise.all([recursiveShutdown, recursiveForceFlush]).then(
+        () => {}
+      );
     });
     sinon.stub(reader, 'forceFlush').callsFake(() => {
       readerForceFlushCalls += 1;
       return Promise.resolve();
     });
-    provider = new MeterProvider({ readers: [reader] });
+    const provider = new MeterProvider({ readers: [reader] });
 
     await provider.shutdown();
     await Promise.all([recursiveShutdown, recursiveForceFlush]);

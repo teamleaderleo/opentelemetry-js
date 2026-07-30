@@ -141,6 +141,7 @@ export abstract class MetricReader implements IMetricReader {
   private readonly _shutdownOnce: BindOnceFuture<void>;
   private _shutdownOptions?: ShutdownOptions;
   private _shutdownInvocationActive = false;
+  private _shutdownCollectionActive = false;
   // Additional MetricProducers which will be combined with the SDK's output
   private _metricProducers: MetricProducer[];
   // MetricProducer used by this instance which produces metrics from the SDK
@@ -245,6 +246,28 @@ export abstract class MetricReader implements IMetricReader {
       throw new Error('MetricReader is shutdown');
     }
 
+    return this._collect(options);
+  }
+
+  protected collectForShutdown(
+    options?: CollectionOptions
+  ): Promise<CollectionResult> {
+    if (!this._shutdownCollectionActive) {
+      return Promise.reject(
+        new Error('MetricReader shutdown collection is unavailable')
+      );
+    }
+
+    return this._collect(options);
+  }
+
+  private async _collect(
+    options?: CollectionOptions
+  ): Promise<CollectionResult> {
+    if (this._sdkMetricProducer === undefined) {
+      throw new Error('MetricReader is not bound to a MetricProducer');
+    }
+
     const startTime = hrTime();
     const [sdkCollectionResults, ...additionalCollectionResults] =
       await Promise.all([
@@ -303,15 +326,26 @@ export abstract class MetricReader implements IMetricReader {
 
   private _shutdown(): Promise<void> {
     this._shutdownInvocationActive = true;
+    this._shutdownCollectionActive = true;
     try {
+      const shutdown = this.onShutdown();
+      void shutdown.then(
+        () => {
+          this._shutdownCollectionActive = false;
+        },
+        () => {
+          this._shutdownCollectionActive = false;
+        }
+      );
+
       // No timeout if timeoutMillis is undefined or null.
       if (this._shutdownOptions?.timeoutMillis == null) {
-        return this.onShutdown();
+        return shutdown;
       }
-      return callWithTimeout(
-        this.onShutdown(),
-        this._shutdownOptions.timeoutMillis
-      );
+      return callWithTimeout(shutdown, this._shutdownOptions.timeoutMillis);
+    } catch (error) {
+      this._shutdownCollectionActive = false;
+      throw error;
     } finally {
       this._shutdownInvocationActive = false;
     }
@@ -319,7 +353,9 @@ export abstract class MetricReader implements IMetricReader {
 
   async forceFlush(options?: ForceFlushOptions): Promise<void> {
     if (this._shutdownInvocationActive) {
-      api.diag.warn('Cannot forceFlush recursively during MetricReader shutdown.');
+      api.diag.warn(
+        'Cannot forceFlush recursively during MetricReader shutdown.'
+      );
       return;
     }
     if (this._shutdownOnce.isCalled) {
