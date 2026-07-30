@@ -98,7 +98,9 @@ export class LoggerProvider implements ILoggerProvider {
    */
   public forceFlush(options?: ForceFlushOptions): Promise<void> {
     if (this._shutdownInvocationActive) {
-      diag.warn('cannot force flush recursively during LoggerProvider shutdown');
+      diag.warn(
+        'cannot force flush recursively during LoggerProvider shutdown'
+      );
       return Promise.resolve();
     }
     // do not flush after shutdown
