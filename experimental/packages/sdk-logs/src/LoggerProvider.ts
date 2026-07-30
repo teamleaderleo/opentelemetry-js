@@ -28,6 +28,7 @@ export const DEFAULT_LOGGER_NAME = 'unknown';
 
 export class LoggerProvider implements ILoggerProvider {
   private _shutdownOnce: BindOnceFuture<void>;
+  private _shutdownInvocationActive = false;
   private readonly _sharedState: LoggerProviderSharedState;
 
   constructor(config: LoggerProviderOptions = {}) {
@@ -96,6 +97,12 @@ export class LoggerProvider implements ILoggerProvider {
    * Returns a promise which is resolved when all flushes are complete.
    */
   public forceFlush(options?: ForceFlushOptions): Promise<void> {
+    if (this._shutdownInvocationActive) {
+      diag.warn(
+        'cannot force flush recursively during LoggerProvider shutdown'
+      );
+      return Promise.resolve();
+    }
     // do not flush after shutdown
     if (this._shutdownOnce.isCalled) {
       diag.warn('invalid attempt to force flush after LoggerProvider shutdown');
@@ -111,6 +118,10 @@ export class LoggerProvider implements ILoggerProvider {
    * Returns a promise which is resolved when all flushes are complete.
    */
   public shutdown(): Promise<void> {
+    if (this._shutdownInvocationActive) {
+      diag.warn('recursive LoggerProvider shutdown is ignored');
+      return Promise.resolve();
+    }
     if (this._shutdownOnce.isCalled) {
       diag.warn('shutdown may only be called once per LoggerProvider');
       return this._shutdownOnce.promise;
@@ -120,6 +131,11 @@ export class LoggerProvider implements ILoggerProvider {
 
   private _shutdown(): Promise<void> {
     this._sharedState.hasShutdown = true;
-    return this._sharedState.activeProcessor.shutdown();
+    this._shutdownInvocationActive = true;
+    try {
+      return this._sharedState.activeProcessor.shutdown();
+    } finally {
+      this._shutdownInvocationActive = false;
+    }
   }
 }
