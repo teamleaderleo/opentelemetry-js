@@ -30,7 +30,10 @@ describe('MultiLogRecordProcessor attempt-all lifecycle', () => {
     };
     const processor = new MultiLogRecordProcessor([first, second]);
 
-    await assert.rejects(processor.shutdown(), candidate => candidate === error);
+    await assert.rejects(
+      processor.shutdown(),
+      candidate => candidate === error
+    );
     assert.strictEqual(firstCalls, 1);
     assert.strictEqual(secondCalls, 1);
   });
