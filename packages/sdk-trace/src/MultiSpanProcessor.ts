@@ -21,7 +21,7 @@ export class MultiSpanProcessor implements SpanProcessor {
 
   forceFlush(): Promise<void> {
     const promises = this._spanProcessors.map(spanProcessor =>
-      Promise.resolve().then(() => spanProcessor.forceFlush())
+      callLifecycle(() => spanProcessor.forceFlush())
     );
 
     return Promise.all(promises).then(
@@ -57,8 +57,16 @@ export class MultiSpanProcessor implements SpanProcessor {
   shutdown(): Promise<void> {
     return Promise.all(
       this._spanProcessors.map(spanProcessor =>
-        Promise.resolve().then(() => spanProcessor.shutdown())
+        callLifecycle(() => spanProcessor.shutdown())
       )
     ).then(() => {});
+  }
+}
+
+function callLifecycle(callback: () => Promise<void>): Promise<void> {
+  try {
+    return callback();
+  } catch (error) {
+    return Promise.reject(error);
   }
 }
