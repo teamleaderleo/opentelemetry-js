@@ -49,7 +49,8 @@ export interface MetricReaderOptions {
    */
   aggregationTemporalitySelector?: AggregationTemporalitySelector;
   /**
-   * Cardinality selector based on metric instrument types. If not configured, a default value is used.
+   * Cardinality selector based on metric instrument types. If not configured,
+   * a default value is used.
    *
    * <p> NOTE: the provided function MUST be pure
    */
@@ -133,15 +134,12 @@ export interface IMetricReader {
 }
 
 /**
- * A registered reader of metrics, which, when linked to a {@link MetricProducer},
- * offers global control over metrics.
+ * A registered reader of metrics that, when linked to a {@link MetricProducer}, offers global
+ * control over metrics.
  */
 export abstract class MetricReader implements IMetricReader {
-  private readonly _shutdownOnce: BindOnceFuture<
-    void,
-    MetricReader,
-    (options?: ShutdownOptions) => Promise<void>
-  >;
+  private readonly _shutdownOnce: BindOnceFuture<void>;
+  private _shutdownOptions?: ShutdownOptions;
   private _shutdownInvocationActive = false;
   // Additional MetricProducers which will be combined with the SDK's output
   private _metricProducers: MetricProducer[];
@@ -209,7 +207,7 @@ export abstract class MetricReader implements IMetricReader {
   selectCardinalityLimit(instrumentType: InstrumentType): number {
     return this._cardinalitySelector
       ? this._cardinalitySelector(instrumentType)
-      : 2000; // default value
+      : 2000; // default value if no selector is provided
   }
 
   /**
@@ -265,12 +263,7 @@ export abstract class MetricReader implements IMetricReader {
     const errors = sdkCollectionResults.errors.concat(
       additionalCollectionResults.flatMap(result => result.errors)
     );
-    const resource = sdkCollectionResults.resourceMetrics.resource;
-    const scopeMetrics = sdkCollectionResults.resourceMetrics.scopeMetrics.concat(
-      additionalCollectionResults.flatMap(
-        result => result.resourceMetrics.scopeMetrics
-      )
-    );
+
     const collectDuration = hrTimeToSeconds(hrTimeDuration(startTime, endTime));
     this._selfObsMetrics.recordCollection(
       collectDuration,
@@ -278,6 +271,14 @@ export abstract class MetricReader implements IMetricReader {
         ? ((errors[0] as Error).name ?? 'collect_error')
         : undefined
     );
+
+    const resource = sdkCollectionResults.resourceMetrics.resource;
+    const scopeMetrics =
+      sdkCollectionResults.resourceMetrics.scopeMetrics.concat(
+        additionalCollectionResults.flatMap(
+          result => result.resourceMetrics.scopeMetrics
+        )
+      );
     return {
       resourceMetrics: {
         resource,
@@ -296,17 +297,21 @@ export abstract class MetricReader implements IMetricReader {
       api.diag.error('Cannot call shutdown twice.');
       return this._shutdownOnce.promise;
     }
-    return this._shutdownOnce.call(options);
+    this._shutdownOptions = options;
+    return this._shutdownOnce.call();
   }
 
-  private _shutdown(options?: ShutdownOptions): Promise<void> {
+  private _shutdown(): Promise<void> {
     this._shutdownInvocationActive = true;
     try {
       // No timeout if timeoutMillis is undefined or null.
-      if (options?.timeoutMillis == null) {
+      if (this._shutdownOptions?.timeoutMillis == null) {
         return this.onShutdown();
       }
-      return callWithTimeout(this.onShutdown(), options.timeoutMillis);
+      return callWithTimeout(
+        this.onShutdown(),
+        this._shutdownOptions.timeoutMillis
+      );
     } finally {
       this._shutdownInvocationActive = false;
     }
