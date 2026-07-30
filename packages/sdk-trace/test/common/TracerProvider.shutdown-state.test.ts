@@ -41,27 +41,56 @@ describe('TracerProvider shutdown state', () => {
     assert.strictEqual(shutdownCalls, 1);
   });
 
-  it('converts a synchronous processor throw into one shared rejection', async () => {
+  it('keeps admission closed and shares one rejection after a synchronous processor throw', async () => {
     const error = new Error('fieldwork trace shutdown failure');
     let shutdownCalls = 0;
+    let forceFlushCalls = 0;
+    let getMeterCalls = 0;
     const processor: SpanProcessor = {
       onStart() {},
       onEnd() {},
-      forceFlush: () => Promise.resolve(),
+      forceFlush: () => {
+        forceFlushCalls += 1;
+        return Promise.resolve();
+      },
       shutdown: () => {
         shutdownCalls += 1;
         throw error;
       },
     };
-    const provider = new TracerProvider({ spanProcessors: [processor] });
+    const provider = new TracerProvider({
+      spanProcessors: [processor],
+      meterProvider: {
+        getMeter() {
+          getMeterCalls += 1;
+          return createNoopMeter();
+        },
+      },
+    });
+    const cachedTracer = provider.getTracer('cached-before-failed-shutdown');
 
     const first = provider.shutdown();
     const second = provider.shutdown();
+    const forceFlush = provider.forceFlush();
 
     assert.strictEqual(first, second);
+    assert.strictEqual(forceFlush, first);
     await assert.rejects(first, candidate => candidate === error);
     await assert.rejects(second, candidate => candidate === error);
+    await assert.rejects(forceFlush, candidate => candidate === error);
+
+    const cachedSpan = cachedTracer.startSpan('cached-after-failed-shutdown');
+    const newSpan = provider
+      .getTracer('requested-after-failed-shutdown')
+      .startSpan('new-after-failed-shutdown');
+
+    assert.strictEqual(cachedSpan.isRecording(), false);
+    assert.strictEqual(newSpan.isRecording(), false);
+    cachedSpan.end();
+    newSpan.end();
     assert.strictEqual(shutdownCalls, 1);
+    assert.strictEqual(forceFlushCalls, 0);
+    assert.strictEqual(getMeterCalls, 1);
   });
 
   it('does not deadlock when a processor returns recursive provider shutdown', async () => {
