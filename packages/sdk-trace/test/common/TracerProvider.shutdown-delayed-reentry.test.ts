@@ -83,6 +83,26 @@ describe('TracerProvider delayed shutdown reentry', () => {
     assert.strictEqual(processorForceFlushCalls, 0);
   });
 
+  it('allows unrelated callers to join a healthy pending shutdown', async () => {
+    let releaseShutdown: () => void = () => {};
+    const pendingShutdown = new Promise<void>(resolve => {
+      releaseShutdown = resolve;
+    });
+    const provider = new TracerProvider({
+      spanProcessors: [processor(() => pendingShutdown)],
+    });
+
+    const first = provider.shutdown();
+    await nextTurn();
+    const second = provider.shutdown();
+
+    assert.strictEqual(second, first);
+    assert.strictEqual(await settlesWithin(first), false);
+
+    releaseShutdown();
+    await Promise.all([first, second]);
+  });
+
   it('allows delayed cross-provider shutdown nesting to complete', async () => {
     const nested = new TracerProvider({
       spanProcessors: [processor(() => Promise.resolve())],
