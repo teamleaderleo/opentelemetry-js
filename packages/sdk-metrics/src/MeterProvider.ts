@@ -96,7 +96,7 @@ export class MeterProvider implements IMeterProvider {
 
     await Promise.all(
       this._sharedState.metricCollectors.map(collector =>
-        Promise.resolve().then(() => collector.shutdown(options))
+        callLifecycle(() => collector.shutdown(options))
       )
     );
   }
@@ -115,8 +115,16 @@ export class MeterProvider implements IMeterProvider {
 
     await Promise.all(
       this._sharedState.metricCollectors.map(collector =>
-        Promise.resolve().then(() => collector.forceFlush(options))
+        callLifecycle(() => collector.forceFlush(options))
       )
     );
+  }
+}
+
+function callLifecycle(callback: () => Promise<void>): Promise<void> {
+  try {
+    return callback();
+  } catch (error) {
+    return Promise.reject(error);
   }
 }
