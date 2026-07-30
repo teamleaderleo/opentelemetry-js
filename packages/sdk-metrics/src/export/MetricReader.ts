@@ -237,6 +237,10 @@ export abstract class MetricReader implements IMetricReader {
   protected abstract onForceFlush(): Promise<void>;
 
   async collect(options?: CollectionOptions): Promise<CollectionResult> {
+    if (this._sdkMetricProducer === undefined) {
+      throw new Error('MetricReader is not bound to a MetricProducer');
+    }
+
     // Subsequent invocations to collect are not allowed. SDKs SHOULD return some failure for these calls.
     if (this._shutdownOnce.isCalled) {
       throw new Error('MetricReader is shutdown');
