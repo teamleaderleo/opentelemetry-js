@@ -6,6 +6,7 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 import { MetricReader } from '../../src';
+import { TestMetricProducer } from './TestMetricProducer';
 
 class ControlledMetricReader extends MetricReader {
   public shutdownCalls = 0;
@@ -87,8 +88,9 @@ describe('MetricReader shutdown state', () => {
     assert.strictEqual(reader.shutdownCalls, 1);
   });
 
-  it('returns the shutdown result instead of force flushing after shutdown begins', async () => {
+  it('becomes terminal and returns the shutdown result once shutdown begins', async () => {
     const reader = new ControlledMetricReader();
+    reader.setMetricProducer(new TestMetricProducer());
     let resolveShutdown: () => void = () => {};
     const pendingShutdown = new Promise<void>(resolve => {
       resolveShutdown = resolve;
@@ -104,6 +106,7 @@ describe('MetricReader shutdown state', () => {
     await Promise.resolve();
     assert.strictEqual(forceFlushResolved, false);
     assert.strictEqual(reader.forceFlushCalls, 0);
+    await assert.rejects(reader.collect(), /MetricReader is shutdown/);
 
     resolveShutdown();
     await Promise.all([shutdown, forceFlush]);
