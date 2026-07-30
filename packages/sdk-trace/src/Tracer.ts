@@ -182,6 +182,37 @@ export class Tracer implements api.Tracer {
    * @param [context] Context to use to extract parent
    * @param fn function called in the context of the span and receives the newly created span as an argument
    * @returns return value of fn
+   * @example
+   *   const something = tracer.startActiveSpan('op', span => {
+   *     try {
+   *       do some work
+   *       span.setStatus({code: SpanStatusCode.OK});
+   *       return something;
+   *     } catch (err) {
+   *       span.setStatus({
+   *         code: SpanStatusCode.ERROR,
+   *         message: err.message,
+   *       });
+   *       throw err;
+   *     } finally {
+   *       span.end();
+   *     }
+   *   }
+   * @example
+   *   const span = tracer.startActiveSpan('op', span => {
+   *     try {
+   *       do some work
+   *       return span;
+   *     } catch (err) {
+   *       span.setStatus({
+   *         code: SpanStatusCode.ERROR,
+   *         message: err.message,
+   *       });
+   *       throw err;
+   *     }
+   *   }
+   *   do some more work
+   *   span.end();
    */
   startActiveSpan<F extends (span: api.Span) => ReturnType<F>>(
     name: string,
