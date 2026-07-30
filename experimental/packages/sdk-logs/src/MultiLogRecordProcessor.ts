@@ -25,7 +25,7 @@ export class MultiLogRecordProcessor implements LogRecordProcessor {
     const timeout = options?.timeoutMillis ?? 30000;
     await Promise.all(
       this.processors.map(processor =>
-        Promise.resolve().then(() =>
+        callLifecycle(() =>
           callWithTimeout(processor.forceFlush(), timeout)
         )
       )
@@ -41,7 +41,7 @@ export class MultiLogRecordProcessor implements LogRecordProcessor {
   public async shutdown(): Promise<void> {
     await Promise.all(
       this.processors.map(processor =>
-        Promise.resolve().then(() => processor.shutdown())
+        callLifecycle(() => processor.shutdown())
       )
     );
   }
@@ -58,5 +58,13 @@ export class MultiLogRecordProcessor implements LogRecordProcessor {
       }
     }
     return false;
+  }
+}
+
+function callLifecycle(callback: () => Promise<void>): Promise<void> {
+  try {
+    return callback();
+  } catch (error) {
+    return Promise.reject(error);
   }
 }
