@@ -8,7 +8,7 @@ import type { SpanProcessor } from '../../src';
 import { TracerProvider } from '../../src';
 
 describe('TracerProvider shutdown state', () => {
-  it('shares one shutdown operation and result across concurrent callers', async () => {
+  it('shares one shutdown operation and result across concurrent and later callers', async () => {
     let shutdownCalls = 0;
     let resolveShutdown: () => void = () => {};
     const pendingShutdown = new Promise<void>(resolve => {
@@ -33,6 +33,10 @@ describe('TracerProvider shutdown state', () => {
 
     resolveShutdown();
     await Promise.all([first, second]);
+
+    const third = provider.shutdown();
+    assert.strictEqual(third, first);
+    await third;
     assert.strictEqual(shutdownCalls, 1);
   });
 
@@ -57,6 +61,52 @@ describe('TracerProvider shutdown state', () => {
     await assert.rejects(first, candidate => candidate === error);
     await assert.rejects(second, candidate => candidate === error);
     assert.strictEqual(shutdownCalls, 1);
+  });
+
+  it('does not deadlock when a processor returns recursive provider shutdown', async () => {
+    let provider: TracerProvider;
+    let shutdownCalls = 0;
+    let recursiveShutdown: Promise<void> | undefined;
+    const processor: SpanProcessor = {
+      onStart() {},
+      onEnd() {},
+      forceFlush: () => Promise.resolve(),
+      shutdown: () => {
+        shutdownCalls += 1;
+        recursiveShutdown = provider.shutdown();
+        return recursiveShutdown;
+      },
+    };
+    provider = new TracerProvider({ spanProcessors: [processor] });
+
+    await provider.shutdown();
+    await recursiveShutdown;
+
+    assert.strictEqual(shutdownCalls, 1);
+  });
+
+  it('does not deadlock when a processor force flushes the provider during shutdown', async () => {
+    let provider: TracerProvider;
+    let processorForceFlushCalls = 0;
+    let recursiveForceFlush: Promise<void> | undefined;
+    const processor: SpanProcessor = {
+      onStart() {},
+      onEnd() {},
+      forceFlush: () => {
+        processorForceFlushCalls += 1;
+        return Promise.resolve();
+      },
+      shutdown: () => {
+        recursiveForceFlush = provider.forceFlush();
+        return recursiveForceFlush;
+      },
+    };
+    provider = new TracerProvider({ spanProcessors: [processor] });
+
+    await provider.shutdown();
+    await recursiveForceFlush;
+
+    assert.strictEqual(processorForceFlushCalls, 0);
   });
 
   it('makes cached and new tracers non-recording as soon as shutdown begins', async () => {
