@@ -65,7 +65,6 @@ describe('TracerProvider shutdown state', () => {
   });
 
   it('does not deadlock when a processor returns recursive provider shutdown', async () => {
-    let provider: TracerProvider;
     let shutdownCalls = 0;
     let recursiveShutdown: Promise<void> | undefined;
     const processor: SpanProcessor = {
@@ -78,7 +77,7 @@ describe('TracerProvider shutdown state', () => {
         return recursiveShutdown;
       },
     };
-    provider = new TracerProvider({ spanProcessors: [processor] });
+    const provider = new TracerProvider({ spanProcessors: [processor] });
 
     await provider.shutdown();
     await recursiveShutdown;
@@ -87,7 +86,6 @@ describe('TracerProvider shutdown state', () => {
   });
 
   it('does not deadlock when a processor force flushes the provider during shutdown', async () => {
-    let provider: TracerProvider;
     let processorForceFlushCalls = 0;
     let recursiveForceFlush: Promise<void> | undefined;
     const processor: SpanProcessor = {
@@ -102,7 +100,7 @@ describe('TracerProvider shutdown state', () => {
         return recursiveForceFlush;
       },
     };
-    provider = new TracerProvider({ spanProcessors: [processor] });
+    const provider = new TracerProvider({ spanProcessors: [processor] });
 
     await provider.shutdown();
     await recursiveForceFlush;
