@@ -154,15 +154,15 @@ export class PeriodicExportingMetricReader extends MetricReader {
     this._maxExportBatchSize = maxExportBatchSize;
   }
 
-  private async _runOnce(): Promise<void> {
+  private async _runOnce(allowShutdownCollection = false): Promise<void> {
     try {
-      await this._doRun();
+      await this._doRun(allowShutdownCollection);
     } catch (err) {
       globalErrorHandler(err);
     }
   }
 
-  private async _doRun(): Promise<void> {
+  private async _doRun(allowShutdownCollection = false): Promise<void> {
     if (this._ongoingExportPromise) {
       api.diag.debug(
         'PeriodicExportingMetricReader: export already in progress, skipping'
@@ -171,9 +171,12 @@ export class PeriodicExportingMetricReader extends MetricReader {
     }
 
     const currentRun = async () => {
-      const { resourceMetrics, errors } = await this.collect({
+      const collectionOptions = {
         timeoutMillis: this._exportTimeout,
-      });
+      };
+      const { resourceMetrics, errors } = allowShutdownCollection
+        ? await this.collectForShutdown(collectionOptions)
+        : await this.collect(collectionOptions);
 
       if (errors.length > 0) {
         api.diag.error(
@@ -257,6 +260,10 @@ export class PeriodicExportingMetricReader extends MetricReader {
   }
 
   protected async onForceFlush(): Promise<void> {
+    await this._forceFlush();
+  }
+
+  private async _forceFlush(allowShutdownCollection = false): Promise<void> {
     // Wait for any in-progress export to finish first so that we never run
     // collect + export concurrently with it.
     await this._awaitOngoingExport();
@@ -267,7 +274,7 @@ export class PeriodicExportingMetricReader extends MetricReader {
     if (this._ongoingExportPromise) {
       await this._awaitOngoingExport();
     } else {
-      await this._runOnce();
+      await this._runOnce(allowShutdownCollection);
     }
     await this._exporter.forceFlush();
   }
@@ -293,7 +300,7 @@ export class PeriodicExportingMetricReader extends MetricReader {
     if (this._interval) {
       clearInterval(this._interval);
     }
-    await this.onForceFlush();
+    await this._forceFlush(true);
     await this._exporter.shutdown();
   }
 }
