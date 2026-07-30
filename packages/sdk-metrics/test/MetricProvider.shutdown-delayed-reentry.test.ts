@@ -27,9 +27,11 @@ class DelayedReentrantMetricReader extends MetricReader {
   public owner?: MeterProvider;
   public nestedShutdown?: Promise<void>;
   public shutdownCalls = 0;
+  private readonly target: 'reader' | 'provider';
 
-  constructor(private readonly target: 'reader' | 'provider') {
+  constructor(target: 'reader' | 'provider') {
     super();
+    this.target = target;
   }
 
   protected async onShutdown(): Promise<void> {
