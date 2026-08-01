@@ -96,19 +96,22 @@ export class TracerProvider implements ApiTracerProvider {
 
   forceFlush(): Promise<void> {
     const timeout = this._forceFlushTimeoutMillis;
-    const promises = this._activeSpanProcessor['_spanProcessors'].map(
-      (spanProcessor: SpanProcessor) => {
-        return new Promise(resolve => {
-          let state: ForceFlushState;
-          const timeoutInterval = setTimeout(() => {
-            resolve(
-              new Error(
-                `Span processor did not completed within timeout period of ${timeout} ms`
-              )
-            );
-            state = ForceFlushState.timeout;
-          }, timeout);
+    const spanProcessors = this._activeSpanProcessor[
+      '_spanProcessors'
+    ].slice();
+    const promises = spanProcessors.map((spanProcessor: SpanProcessor) => {
+      return new Promise(resolve => {
+        let state: ForceFlushState;
+        const timeoutInterval = setTimeout(() => {
+          resolve(
+            new Error(
+              `Span processor did not completed within timeout period of ${timeout} ms`
+            )
+          );
+          state = ForceFlushState.timeout;
+        }, timeout);
 
+        try {
           spanProcessor
             .forceFlush()
             .then(() => {
@@ -123,9 +126,13 @@ export class TracerProvider implements ApiTracerProvider {
               state = ForceFlushState.error;
               resolve(error);
             });
-        });
-      }
-    );
+        } catch (error) {
+          clearTimeout(timeoutInterval);
+          state = ForceFlushState.error;
+          resolve(error);
+        }
+      });
+    });
 
     return new Promise<void>((resolve, reject) => {
       Promise.all(promises)

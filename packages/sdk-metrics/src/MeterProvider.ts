@@ -94,10 +94,9 @@ export class MeterProvider implements IMeterProvider {
 
     this._shutdown = true;
 
+    const collectors = this._sharedState.metricCollectors.slice();
     await Promise.all(
-      this._sharedState.metricCollectors.map(collector => {
-        return collector.shutdown(options);
-      })
+      collectors.map(collector => collector.shutdown(options))
     );
   }
 
@@ -113,10 +112,9 @@ export class MeterProvider implements IMeterProvider {
       return;
     }
 
+    const collectors = this._sharedState.metricCollectors.slice();
     await Promise.all(
-      this._sharedState.metricCollectors.map(collector => {
-        return collector.forceFlush(options);
-      })
+      collectors.map(collector => collector.forceFlush(options))
     );
   }
 }
